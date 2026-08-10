@@ -289,6 +289,22 @@ function disableSuperKey() {
   wsKeys.forEach(k => {
     exec(`gsettings set org.gnome.desktop.wm.keybindings ${k} "[]"`, () => {});
   });
+
+  // Disable 3-finger touchpad swipe gestures (workspace switching, app spread)
+  // These are handled by GNOME Shell compositor independently of keybindings
+  exec("xinput list --name-only", (err, stdout) => {
+    if (err) return;
+    const devices = stdout.split('\n').filter(d =>
+      /touchpad|trackpad|synaptics/i.test(d)
+    );
+    devices.forEach(deviceName => {
+      const name = deviceName.trim();
+      if (!name) return;
+      // Disable all swipe gestures (3-finger and 4-finger)
+      exec(`xinput set-prop "${name}" "libinput Gesture Swipe Enable" 0`, () => {});
+      console.log(`[ExamGuard] Swipe gestures disabled for: ${name}`);
+    });
+  });
 }
 
 function restoreSuperKey() {
@@ -335,6 +351,20 @@ function restoreSuperKey() {
   ];
   wsKeys.forEach(k => {
     exec(`gsettings reset org.gnome.desktop.wm.keybindings ${k}`, () => {});
+  });
+
+  // Restore 3-finger touchpad swipe gestures
+  exec("xinput list --name-only", (err, stdout) => {
+    if (err) return;
+    const devices = stdout.split('\n').filter(d =>
+      /touchpad|trackpad|synaptics/i.test(d)
+    );
+    devices.forEach(deviceName => {
+      const name = deviceName.trim();
+      if (!name) return;
+      exec(`xinput set-prop "${name}" "libinput Gesture Swipe Enable" 1`, () => {});
+      console.log(`[ExamGuard] Swipe gestures restored for: ${name}`);
+    });
   });
 }
 
