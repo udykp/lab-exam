@@ -298,6 +298,22 @@ func (s *Store) ClearAssignments(_ context.Context, studentID, examID string) er
 	return nil
 }
 
+func (s *Store) UnassignQuestion(_ context.Context, studentID, examID, questionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, assignment := range s.assignments {
+		if assignment.StudentID == studentID && assignment.ExamID == examID && assignment.QuestionID == questionID {
+			delete(s.assignments, key)
+		}
+	}
+	for key, autosave := range s.autosaves {
+		if autosave.StudentID == studentID && autosave.ExamID == examID && autosave.QuestionID == questionID {
+			delete(s.autosaves, key)
+		}
+	}
+	return nil
+}
+
 func (s *Store) SaveAutosave(_ context.Context, autosave domain.Autosave) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

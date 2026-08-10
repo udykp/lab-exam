@@ -28,6 +28,7 @@ type Store interface {
 	GetAssignments(ctx context.Context, studentID, examID string) ([]domain.Assignment, error)
 	ListAssignments(ctx context.Context, examID string) ([]domain.Assignment, error)
 	ClearAssignments(ctx context.Context, studentID, examID string) error
+	UnassignQuestion(ctx context.Context, studentID, examID, questionID string) error
 
 	SaveAutosave(ctx context.Context, autosave domain.Autosave) error
 	ListAutosaves(ctx context.Context, examID string) ([]domain.Autosave, error)

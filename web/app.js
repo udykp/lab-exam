@@ -272,10 +272,76 @@ const loadStudentExam = async () => {
         state.questions.forEach((q, idx) => {
           const btn = document.createElement('button');
           btn.className = 'tab-btn';
+          btn.style.position = 'relative';
+          btn.style.display = 'inline-flex';
+          btn.style.alignItems = 'center';
+          btn.style.gap = '8px';
           if (idx === state.activeQuestionIndex) btn.classList.add('active');
-          btn.textContent = `Program ${idx + 1}`;
-          btn.type = 'button';
-          btn.addEventListener('click', () => {
+          
+          const label = document.createElement('span');
+          label.textContent = `Program ${idx + 1}`;
+          btn.appendChild(label);
+
+          // Render cross button for dynamic tabs (i.e. if idx > 0, we can close it!)
+          if (idx > 0) {
+            const closeBtn = document.createElement('span');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cursor = 'pointer';
+            closeBtn.style.fontSize = '0.75rem';
+            closeBtn.style.opacity = '0.6';
+            closeBtn.style.padding = '2px 4px';
+            closeBtn.style.borderRadius = '4px';
+            closeBtn.style.transition = 'all 0.2s';
+            closeBtn.addEventListener('mouseenter', () => {
+              closeBtn.style.opacity = '1';
+              closeBtn.style.background = 'rgba(239, 68, 68, 0.2)';
+              closeBtn.style.color = '#ef4444';
+            });
+            closeBtn.addEventListener('mouseleave', () => {
+              closeBtn.style.opacity = '0.6';
+              closeBtn.style.background = 'transparent';
+              closeBtn.style.color = 'inherit';
+            });
+            closeBtn.addEventListener('click', async (e) => {
+              e.stopPropagation(); // prevent switching tab trigger
+              
+              if (!confirm(`Are you sure you want to close Program ${idx + 1}? All un-submitted draft code for this program will be lost.`)) {
+                return;
+              }
+
+              try {
+                // Call unassign API
+                await api('/api/v1/student/unassign', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    exam_id: state.examId,
+                    question_id: q.id
+                  })
+                });
+
+                // Remove question and draft
+                state.questions.splice(idx, 1);
+                delete state.drafts[q.id];
+
+                // If closed tab was active, focus on the previous tab
+                if (state.activeQuestionIndex === idx) {
+                  state.activeQuestionIndex = Math.max(0, idx - 1);
+                } else if (state.activeQuestionIndex > idx) {
+                  state.activeQuestionIndex--;
+                }
+
+                loadTabState(state.activeQuestionIndex);
+                renderTabs();
+              } catch (err) {
+                alert('Failed to close program: ' + err.message);
+              }
+            });
+            btn.appendChild(closeBtn);
+          }
+
+          btn.addEventListener('click', (e) => {
+            if (e.target.textContent === '✕') return; // clicked close button
             saveCurrentTabState();
             loadTabState(idx);
             renderTabs();

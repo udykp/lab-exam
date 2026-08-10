@@ -69,6 +69,7 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/student/exam", s.requireRole(domain.RoleStudent, s.handleStudentExam))
 	mux.HandleFunc("/api/v1/student/questions", s.requireRole(domain.RoleStudent, s.handleStudentQuestions))
 	mux.HandleFunc("/api/v1/student/select_question", s.requireRole(domain.RoleStudent, s.handleStudentSelectQuestion))
+	mux.HandleFunc("/api/v1/student/unassign", s.requireRole(domain.RoleStudent, s.handleStudentUnassign))
 	mux.HandleFunc("/api/v1/student/autosave", s.requireRole(domain.RoleStudent, s.handleAutosave))
 	mux.HandleFunc("/api/v1/student/submit", s.requireRole(domain.RoleStudent, s.handleSubmit))
 	mux.HandleFunc("/api/v1/student/violation", s.requireRole(domain.RoleStudent, s.handleViolation))
@@ -419,6 +420,36 @@ func (s *Service) handleStudentSelectQuestion(w http.ResponseWriter, r *http.Req
 		"question":   question,
 		"assignment": assignment,
 	})
+}
+
+func (s *Service) handleStudentUnassign(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	claims, ok := claimsFromRequest(r, s.tokens)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		ExamID     string `json:"exam_id"`
+		QuestionID string `json:"question_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if req.ExamID == "" {
+		req.ExamID = "exam-1"
+	}
+
+	if err := s.store.UnassignQuestion(r.Context(), claims.Subject, req.ExamID, req.QuestionID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "unassigned"})
 }
 
 func (s *Service) handleFacultyChits(w http.ResponseWriter, r *http.Request, examID string) {

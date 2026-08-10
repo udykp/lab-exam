@@ -434,7 +434,7 @@ func (s *Store) GetAssignment(ctx context.Context, studentID, examID string) (*d
 }
 
 func (s *Store) GetAssignments(ctx context.Context, studentID, examID string) ([]domain.Assignment, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT student_id, exam_id, question_id, question_number FROM assignments WHERE student_id = ? AND exam_id = ?`, studentID, examID)
+	rows, err := s.db.QueryContext(ctx, `SELECT student_id, exam_id, question_id, question_number FROM assignments WHERE student_id = ? AND exam_id = ? ORDER BY question_number ASC`, studentID, examID)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +452,7 @@ func (s *Store) GetAssignments(ctx context.Context, studentID, examID string) ([
 }
 
 func (s *Store) ListAssignments(ctx context.Context, examID string) ([]domain.Assignment, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT student_id, exam_id, question_id, question_number FROM assignments WHERE exam_id = ?`, examID)
+	rows, err := s.db.QueryContext(ctx, `SELECT student_id, exam_id, question_id, question_number FROM assignments WHERE exam_id = ? ORDER BY question_number ASC`, examID)
 	if err != nil {
 		return nil, err
 	}
@@ -472,6 +472,15 @@ func (s *Store) ListAssignments(ctx context.Context, examID string) ([]domain.As
 func (s *Store) ClearAssignments(ctx context.Context, studentID, examID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM assignments WHERE student_id = ? AND exam_id = ?`, studentID, examID)
 	return err
+}
+
+func (s *Store) UnassignQuestion(ctx context.Context, studentID, examID, questionID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM assignments WHERE student_id = ? AND exam_id = ? AND question_id = ?`, studentID, examID, questionID)
+	if err != nil {
+		return err
+	}
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM autosaves WHERE student_id = ? AND exam_id = ? AND question_id = ?`, studentID, examID, questionID)
+	return nil
 }
 
 func (s *Store) SaveAutosave(ctx context.Context, a domain.Autosave) error {
