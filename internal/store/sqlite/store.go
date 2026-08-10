@@ -176,8 +176,6 @@ func (s *Store) SeedDemoData() {
 
 	s.db.ExecContext(ctx, `INSERT OR IGNORE INTO assignments (student_id, exam_id, question_id, question_number) VALUES (?, ?, ?, ?)`,
 		"stu-1", "exam-1", "q-1", 1)
-	s.db.ExecContext(ctx, `INSERT OR IGNORE INTO assignments (student_id, exam_id, question_id, question_number) VALUES (?, ?, ?, ?)`,
-		"stu-1", "exam-1", "q-2", 2)
 
 	s.db.ExecContext(ctx, `INSERT OR IGNORE INTO student_statuses (student_id, exam_id, state, updated_at) VALUES (?, ?, ?, ?)`,
 		"stu-1", "exam-1", "assigned", now)

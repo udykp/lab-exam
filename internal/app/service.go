@@ -276,15 +276,15 @@ func (s *Service) handleStudentExam(w http.ResponseWriter, r *http.Request) {
 	}
 	assignments, err := s.store.GetAssignments(r.Context(), claims.Subject, examID)
 	if err != nil || len(assignments) == 0 {
-		// Auto-assign first two questions if no explicit assignment exists yet
+		// Auto-assign first question if no explicit assignment exists yet
 		questions, qErr := s.store.ListQuestions(r.Context(), examID)
 		if qErr != nil || len(questions) == 0 {
 			http.Error(w, "no questions available for exam", http.StatusNotFound)
 			return
 		}
 		
-		maxAssign := 2
-		if len(questions) < 2 {
+		maxAssign := 1
+		if len(questions) < 1 {
 			maxAssign = len(questions)
 		}
 		

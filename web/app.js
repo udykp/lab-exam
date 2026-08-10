@@ -267,19 +267,71 @@ const loadStudentExam = async () => {
       tabsContainer.innerHTML = '';
       tabsContainer.classList.remove('hidden');
 
-      state.questions.forEach((q, idx) => {
-        const btn = document.createElement('button');
-        btn.className = 'tab-btn';
-        if (idx === 0) btn.classList.add('active');
-        btn.textContent = `Program ${idx + 1}`;
-        btn.type = 'button';
-        btn.addEventListener('click', () => {
-          saveCurrentTabState();
-          loadTabState(idx);
+      const renderTabs = () => {
+        tabsContainer.innerHTML = '';
+        state.questions.forEach((q, idx) => {
+          const btn = document.createElement('button');
+          btn.className = 'tab-btn';
+          if (idx === state.activeQuestionIndex) btn.classList.add('active');
+          btn.textContent = `Program ${idx + 1}`;
+          btn.type = 'button';
+          btn.addEventListener('click', () => {
+            saveCurrentTabState();
+            loadTabState(idx);
+            renderTabs();
+          });
+          tabsContainer.appendChild(btn);
         });
-        tabsContainer.appendChild(btn);
-      });
 
+        // Add '+' button if tabs count < 10
+        if (state.questions.length < 10) {
+          const addBtn = document.createElement('button');
+          addBtn.className = 'tab-btn-add';
+          addBtn.textContent = '+';
+          addBtn.type = 'button';
+          addBtn.style.padding = '4px 14px';
+          addBtn.style.background = '#10b981';
+          addBtn.style.border = 'none';
+          addBtn.style.borderRadius = '8px';
+          addBtn.style.color = '#ffffff';
+          addBtn.style.fontWeight = 'bold';
+          addBtn.style.cursor = 'pointer';
+          addBtn.style.fontSize = '1.1rem';
+          addBtn.style.marginLeft = '8px';
+          addBtn.style.transition = 'all 0.2s';
+          addBtn.addEventListener('click', async () => {
+            const nextQuestionNumber = state.questions.length + 1;
+            try {
+              addBtn.disabled = true;
+              addBtn.textContent = '...';
+              const res = await api('/api/v1/student/select_question', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  exam_id: state.examId,
+                  question_number: nextQuestionNumber
+                })
+              });
+              
+              if (res && res.question) {
+                saveCurrentTabState();
+                state.questions.push(res.question);
+                state.activeQuestionIndex = state.questions.length - 1;
+                loadTabState(state.activeQuestionIndex);
+                renderTabs();
+              }
+            } catch (err) {
+              alert('No more questions available in this exam or failed to assign: ' + err.message);
+            } finally {
+              addBtn.disabled = false;
+              addBtn.textContent = '+';
+            }
+          });
+          tabsContainer.appendChild(addBtn);
+        }
+      };
+
+      renderTabs();
       loadTabState(0);
     }
 
