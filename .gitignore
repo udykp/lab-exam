@@ -1,0 +1,33 @@
+# Compiled binaries
+bin/
+deploy/server
+
+# Database (contains student data - do not commit)
+*.db
+*.db-shm
+*.db-wal
+
+# Temporary execution folder
+tmp_run/
+
+# Node modules
+node_modules/
+
+# Electron build outputs
+dist/
+out/
+
+# Go build cache
+*.test
+*.out
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files (may contain secrets)
+.env
+.env.local
+
+# Log files
+*.log

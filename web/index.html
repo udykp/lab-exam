@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureMLExam</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Frameless Window Close Button (Active only on login screen) -->
+  <button id="windowCloseBtn" type="button" style="position: fixed; top: 16px; right: 16px; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: bold; background: rgba(255, 255, 255, 0.08) !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; cursor: pointer; color: #a1a1aa; z-index: 10000; transition: all 0.2s ease;">✕</button>
+
+  <!-- Security Violation Overlay -->
+  <div id="violationOverlay" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.99); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(24px);">
+    <div class="panel" style="max-width: 520px; width: 100%; text-align: center; border-color: var(--danger); box-shadow: 0 0 50px rgba(255, 122, 144, 0.25); border-radius: 24px; padding: 32px 24px;">
+      <span class="status-dot" style="background: var(--danger); box-shadow: 0 0 0 10px rgba(255, 122, 144, 0.15); margin: 0 auto 24px; display: block; width: 16px; height: 16px;"></span>
+      <h2 style="color: var(--danger); font-size: 2.2rem; margin: 0 0 12px; font-weight: 800;">Exam Terminated</h2>
+      <p style="font-size: 1.15rem; line-height: 1.6; color: var(--text); margin-bottom: 20px;">A security integrity violation has been detected. Your exam has been locked and marked as failed.</p>
+      <div id="violationDetails" style="background: rgba(255, 122, 144, 0.08); padding: 16px; border-radius: 14px; font-family: monospace; color: var(--danger); font-size: 0.95rem; margin: 20px 0; border: 1px solid rgba(255, 122, 144, 0.2); word-break: break-all; text-align: left;">
+        Violation: App window focus lost
+      </div>
+      <p style="color: var(--muted); font-size: 0.95rem; margin: 0 0 24px 0;">You have been marked as <strong>FAILED</strong> in this midterm. The event has been logged on the faculty server.</p>
+      <button id="violationExitBtn" type="button" style="padding: 12px 24px; font-size: 1rem; background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s ease;">Exit Application</button>
+    </div>
+  </div>
+
+  <div class="bg-shape bg-shape-a"></div>
+  <div class="bg-shape bg-shape-b"></div>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Secure Lab Examination Platform</p>
+        <h1>Run exams, assign chits, and see questions live.</h1>
+        <p class="lede">A local browser UI for faculty and students with Excel roster import, fixed question assignment, live WebSocket updates, and direct exam delivery.</p>
+      </div>
+      <div class="status-card">
+        <span class="status-dot"></span>
+        <div>
+          <strong id="serverStatus">Checking server...</strong>
+          <p id="statusText">Connecting to localhost</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="mainGrid" class="grid two-col auth-only">
+      <article class="panel auth-panel">
+        <div id="loginHeader" class="panel-head">
+          <h2>Login</h2>
+          <div class="segmented hidden">
+            <button class="segmented-btn active" data-mode="student">Student</button>
+            <button class="segmented-btn" data-mode="faculty">Faculty</button>
+          </div>
+        </div>
+
+        <form id="loginForm" class="stack">
+          <input type="hidden" name="role" value="student" />
+          <label class="student-only">
+            <span>Name</span>
+            <input name="name" placeholder="Demo Student" />
+          </label>
+          <label class="student-only">
+            <span>Roll Number</span>
+            <input name="rollNumber" placeholder="220101" />
+          </label>
+          <label class="faculty-only hidden">
+            <span>Email</span>
+            <input name="email" placeholder="faculty@securemlexam.local" />
+          </label>
+          <label class="faculty-only hidden">
+            <span>Password</span>
+            <input name="password" type="password" placeholder="Admin@123" />
+          </label>
+          <label class="student-only">
+            <span>Exam ID</span>
+            <input name="examId" value="exam-1" />
+          </label>
+          <label>
+            <span>Server Address</span>
+            <input name="serverUrl" value="http://localhost:8080" placeholder="http://localhost:8080" />
+          </label>
+          <div id="loginError" class="hidden" style="
+            background: rgba(220, 38, 38, 0.1);
+            border: 1px solid rgba(220, 38, 38, 0.4);
+            color: #f87171;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+          "></div>
+          <button id="loginSubmitBtn" class="primary" type="submit">Sign in</button>
+        </form>
+
+        <!-- Sign Out Area -->
+        <div id="signOutArea" class="stack hidden" style="margin-top: 1.5rem;">
+          <div style="font-size: 1.05rem; margin-bottom: 0.5rem; text-align: center;">
+            Signed in as <strong id="loggedInUser">Faculty</strong>
+          </div>
+          <button id="signOutBtn" class="secondary" type="button">Sign Out</button>
+        </div>
+
+        <div id="debugActionsRow" class="actions-row">
+          <button id="connectWsBtn" class="secondary" type="button">Connect WebSocket</button>
+          <button id="refreshBtn" class="secondary" type="button">Refresh Current View</button>
+        </div>
+
+        <div id="tokenPreviewBox" class="token-box">
+          <div>
+            <span>Token</span>
+            <code id="tokenPreview">Not signed in</code>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;">
+          <div>
+            <h2 id="workspaceTitle">Student Workspace</h2>
+            <p id="workspaceHint">Login as a student to load your assigned question.</p>
+          </div>
+          <button id="endExamBtn" class="hidden" type="button" style="
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 20px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+            box-shadow: 0 4px 18px rgba(220, 38, 38, 0.4);
+            transition: transform 0.15s, box-shadow 0.15s;
+            white-space: nowrap;
+          " onmouseover="this.style.transform='scale(1.04)'" onmouseout="this.style.transform='scale(1)'">
+            ⬛ End Exam
+          </button>
+        </div>
+
+        <!-- Inline End Exam confirmation — no popup, no focus loss, no loophole -->
+        <div id="endExamConfirm" class="hidden" style="
+          background: rgba(220, 38, 38, 0.08);
+          border: 1px solid rgba(220, 38, 38, 0.35);
+          border-radius: 14px;
+          padding: 16px 20px;
+          margin-bottom: 1rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
+        ">
+          <p style="margin: 0; color: #f87171; font-weight: 600; font-size: 0.95rem;">
+            ⚠️ Your code will be auto-saved and submitted. This cannot be undone.
+          </p>
+          <div style="display: flex; gap: 0.75rem; flex-shrink: 0;">
+            <button id="endExamCancelBtn" class="secondary" type="button" style="padding: 8px 18px; font-size: 0.875rem;">Cancel</button>
+            <button id="endExamConfirmBtn" type="button" style="padding: 8px 18px; font-size: 0.875rem; background: linear-gradient(135deg, #dc2626, #b91c1c); color: #fff; border: none; border-radius: 10px; font-weight: 700; cursor: pointer;">Yes, End Exam</button>
+          </div>
+        </div>
+
+        <div id="studentView" class="view stack">
+          <div id="studentTabs" class="hidden" style="display: flex; gap: 12px; margin-bottom: 1rem; border-bottom: 2px solid #e4e4e7; padding-bottom: 8px;"></div>
+          <div id="activeQuestionCard" class="question-card hidden" style="background: #ffffff !important; border: 1px solid #e4e4e7 !important; border-radius: 16px; padding: 24px;">
+            <div class="question-meta">
+              <span id="examLabel" style="color: #71717a;">Exam not loaded</span>
+              <span id="questionLabel" style="color: #71717a;">Question not loaded</span>
+            </div>
+            <h3 id="questionTitle" style="color: #18181b; font-size: 1.5rem; margin: 6px 0;">Loading...</h3>
+            <p id="questionPrompt" style="color: #52525b; line-height: 1.6;">Your question prompt will appear here.</p>
+          </div>
+
+          <div id="editorArea" class="stack hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px;">
+              <label style="color: #27272a; margin: 0; flex: 1;">
+                <span>Select Language</span>
+                <select id="languageSelect" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; padding: 8px 12px; font-weight: 600; color: #18181b;">
+                  <option value="python">Python 3</option>
+                  <option value="c">C (GCC)</option>
+                  <option value="cpp">C++ (G++)</option>
+                  <option value="java">Java (OpenJDK)</option>
+                  <option value="r">R Language</option>
+                  <option value="mysql">MySQL Database</option>
+                </select>
+              </label>
+            </div>
+
+            <label style="color: #27272a;">
+              <span>Code</span>
+              <textarea id="codeEditor" placeholder="Write your solution here..." style="background: #ffffff !important; color: #18181b !important; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; font-family: monospace; font-size: 0.95rem; line-height: 1.5; padding: 16px;"></textarea>
+            </label>
+
+            <div class="actions-row">
+              <button id="runCodeBtn" class="primary" type="button" style="background: #10b981 !important; color: #ffffff !important; border: none; border-radius: 10px; font-weight: 700;">Run Code</button>
+              <button id="submitBtn" class="primary" type="button" style="background: #27272a !important; color: #ffffff !important; border: none; border-radius: 10px; font-weight: 700;">Submit Solution</button>
+              <button id="saveLocalBtn" class="secondary" type="button" style="background: #ffffff !important; color: #18181b !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; font-weight: 700;">💾 Save locally</button>
+            </div>
+
+            <!-- Terminal Output Console -->
+            <div id="codeTerminal" class="console" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; overflow: hidden;">
+              <div class="console-head" style="display: flex; justify-content: space-between; align-items: center; background: #f4f4f5; padding: 12px 16px; border-bottom: 1px solid #e4e4e7; color: #27272a; font-weight: 600;">
+                <span>Terminal Output</span>
+                <button id="clearTerminalBtn" style="background: transparent; color: #71717a; border: 0; padding: 0; font-size: 0.8rem; cursor: pointer;" type="button">Clear</button>
+              </div>
+              <div id="terminalOutputContainer" class="console-body" style="background: #18181b !important; color: #10b981 !important; font-family: monospace; min-height: 180px; max-height: 400px; font-size: 0.95rem; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; cursor: text;">
+                <pre id="terminalOutput" style="flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; font-family: inherit; border: none; background: transparent; padding: 0;">Terminal ready. Write code and click Run Code.</pre>
+                <div id="terminalInputRow" class="hidden" style="display: flex; align-items: center; gap: 8px; color: #ffffff; margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">
+                  <span style="color: #10b981; font-weight: bold;">$</span>
+                  <input id="terminalInput" type="text" style="flex: 1; background: transparent; border: none; outline: none; color: #ffffff; font-family: monospace; font-size: 0.95rem; padding: 0; box-shadow: none !important;" placeholder="Type input here and press Enter..." autocomplete="off" />
+                </div>
+                <div id="terminalOutputs" class="hidden" style="margin-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 16px;">
+                  <h4 style="color: #ffffff; margin: 0 0 12px 0; font-size: 0.9rem; font-weight: 600;">Generated Outputs</h4>
+                  <div id="outputsContainer" style="display: flex; flex-direction: column; gap: 12px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div id="facultyView" class="view stack hidden">
+          <div class="subgrid">
+            <section class="mini-card">
+              <h3>Import Students</h3>
+              <p>Upload an Excel roster with Name and Roll Number columns.</p>
+              <input id="rosterFile" type="file" accept=".xlsx,.xls" />
+              <button id="importRosterBtn" class="secondary" type="button">Upload Excel</button>
+            </section>
+
+            <section class="mini-card">
+              <h3>Assign Chit</h3>
+              <label><span>Roll Number</span><input id="assignRoll" placeholder="220101" /></label>
+              <label><span>Question Number</span><input id="assignQuestion" placeholder="4" /></label>
+              <button id="assignBtn" class="primary" type="button">Assign Question</button>
+            </section>
+          </div>
+
+          <section class="mini-card">
+            <h3>Questions</h3>
+            <p>Fixed question bank for the exam.</p>
+            <div id="questionBank" class="question-bank"></div>
+          </section>
+
+          <section class="mini-card">
+            <h3>Students</h3>
+            <div id="studentList" class="list"></div>
+          </section>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

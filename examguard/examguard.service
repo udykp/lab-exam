@@ -1,0 +1,31 @@
+[Unit]
+Description=ExamGuard — Secure Exam Monitoring Daemon
+Documentation=https://github.com/your-org/securemlexam
+After=network.target graphical-session.target
+Requires=graphical-session.target
+
+[Service]
+Type=simple
+User=root
+
+# The faculty sets student roll and exam ID here before the exam starts
+ExecStart=/usr/local/bin/examguard /etc/examguard/config.json
+
+# Restart immediately if killed by a student
+Restart=always
+RestartSec=2
+
+# Allow access to /dev/input/* for keyboard monitoring
+# and /proc/* for process scanning
+AmbientCapabilities=CAP_NET_ADMIN CAP_DAC_READ_SEARCH
+
+# X11 display access when running as root
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/user/1000/gdm/Xauthority
+
+# Hard kill after 10 s on stop
+TimeoutStopSec=10
+KillMode=mixed
+
+[Install]
+WantedBy=graphical.target
