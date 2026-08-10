@@ -301,9 +301,19 @@ function disableSuperKey() {
   // Block 3-finger swipe workspace switching by collapsing to a single workspace.
   // The gesture still fires but has nowhere to go — touchpad remains fully usable.
   exec("gsettings set org.gnome.mutter dynamic-workspaces false", () => {});
-  exec("gsettings set org.gnome.desktop.wm.preferences num-workspaces 1", (err) => {
-    if (err) console.warn('[ExamGuard] Could not lock workspaces:', err.message);
-    else console.log('[ExamGuard] Workspaces locked to 1 — 3-finger swipe gestures neutralized.');
+  exec("gsettings set org.gnome.desktop.wm.preferences num-workspaces 1", () => {});
+
+  // Directly disable GNOME Shell's swipe gesture trackers at the compositor level.
+  // This kills both the Activities Overview swipe (3-finger up) and workspace
+  // switching swipe (3-finger left/right) — works on Wayland without touching the touchpad.
+  const disableSwipeJs = [
+    "try { Main.overview._swipeTracker.enabled = false; } catch(e) {}",
+    "try { Main.wm._workspaceAnimation._swipeTracker.enabled = false; } catch(e) {}",
+    "try { Main.overview._swipeTracker._touchpadGesture.enabled = false; } catch(e) {}",
+  ].join(" ");
+  exec(`gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval "${disableSwipeJs}"`, (err, stdout) => {
+    if (err) console.warn('[ExamGuard] Could not disable GNOME Shell swipe trackers:', err.message);
+    else console.log('[ExamGuard] GNOME Shell swipe trackers disabled — 3-finger gestures blocked at compositor level.');
   });
 }
 
@@ -355,9 +365,17 @@ function restoreSuperKey() {
 
   // Restore workspaces to dynamic
   exec("gsettings set org.gnome.mutter dynamic-workspaces true", () => {});
-  exec("gsettings reset org.gnome.desktop.wm.preferences num-workspaces", (err) => {
-    if (err) console.warn('[ExamGuard] Could not restore workspaces:', err.message);
-    else console.log('[ExamGuard] Workspaces restored.');
+  exec("gsettings reset org.gnome.desktop.wm.preferences num-workspaces", () => {});
+
+  // Re-enable GNOME Shell swipe trackers
+  const enableSwipeJs = [
+    "try { Main.overview._swipeTracker.enabled = true; } catch(e) {}",
+    "try { Main.wm._workspaceAnimation._swipeTracker.enabled = true; } catch(e) {}",
+    "try { Main.overview._swipeTracker._touchpadGesture.enabled = true; } catch(e) {}",
+  ].join(" ");
+  exec(`gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval "${enableSwipeJs}"`, (err) => {
+    if (err) console.warn('[ExamGuard] Could not restore GNOME Shell swipe trackers:', err.message);
+    else console.log('[ExamGuard] GNOME Shell swipe trackers restored.');
   });
 }
 
