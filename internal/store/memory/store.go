@@ -287,6 +287,17 @@ func (s *Store) ListAssignments(_ context.Context, examID string) ([]domain.Assi
 	return assignments, nil
 }
 
+func (s *Store) ClearAssignments(_ context.Context, studentID, examID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, assignment := range s.assignments {
+		if assignment.StudentID == studentID && assignment.ExamID == examID {
+			delete(s.assignments, key)
+		}
+	}
+	return nil
+}
+
 func (s *Store) SaveAutosave(_ context.Context, autosave domain.Autosave) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

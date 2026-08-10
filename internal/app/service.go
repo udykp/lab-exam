@@ -536,6 +536,7 @@ func (s *Service) handleViolation(w http.ResponseWriter, r *http.Request) {
 
 	if req.Kind == "exam-ended" {
 		s.cleanupMySQLDatabase(r.Context(), claims.Subject)
+		_ = s.store.ClearAssignments(r.Context(), claims.Subject, req.ExamID)
 	}
 
 	s.hub.Publish(domain.RealtimeEvent{Type: "violation", Subject: req.ExamID, Data: req, At: time.Now().UTC()})

@@ -469,6 +469,11 @@ func (s *Store) ListAssignments(ctx context.Context, examID string) ([]domain.As
 	return assignments, nil
 }
 
+func (s *Store) ClearAssignments(ctx context.Context, studentID, examID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM assignments WHERE student_id = ? AND exam_id = ?`, studentID, examID)
+	return err
+}
+
 func (s *Store) SaveAutosave(ctx context.Context, a domain.Autosave) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO autosaves (id, student_id, exam_id, question_id, code, timestamp)
