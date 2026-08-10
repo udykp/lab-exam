@@ -118,13 +118,21 @@ function createWindow() {
   // Focus & Blur events to detect cheating
   mainWindow.on('blur', () => {
     if (mainWindow && mainWindow._examLocked) {
+      // Immediately close GNOME Activities Overview if triggered by 3-finger swipe
+      // This works on Wayland via GNOME Shell's D-Bus interface
+      exec("gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval \"Main.overview.hide();\"", () => {});
+
       mainWindow.focus();
       mainWindow.setAlwaysOnTop(true, 'screen-saver');
       setTimeout(() => {
         if (mainWindow) {
           mainWindow.setAlwaysOnTop(false);
+          mainWindow.setAlwaysOnTop(true, 'screen-saver');
+          mainWindow.focus();
+          // Close overview again after a short delay in case it re-opened
+          exec("gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval \"Main.overview.hide();\"", () => {});
         }
-      }, 500);
+      }, 200);
     }
     mainWindow.webContents.send('window-focus-changed', { focused: false });
   });
