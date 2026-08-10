@@ -290,20 +290,12 @@ function disableSuperKey() {
     exec(`gsettings set org.gnome.desktop.wm.keybindings ${k} "[]"`, () => {});
   });
 
-  // Disable 3-finger touchpad swipe gestures (workspace switching, app spread)
-  // These are handled by GNOME Shell compositor independently of keybindings
-  exec("xinput list --name-only", (err, stdout) => {
-    if (err) return;
-    const devices = stdout.split('\n').filter(d =>
-      /touchpad|trackpad|synaptics/i.test(d)
-    );
-    devices.forEach(deviceName => {
-      const name = deviceName.trim();
-      if (!name) return;
-      // Disable all swipe gestures (3-finger and 4-finger)
-      exec(`xinput set-prop "${name}" "libinput Gesture Swipe Enable" 0`, () => {});
-      console.log(`[ExamGuard] Swipe gestures disabled for: ${name}`);
-    });
+  // Block 3-finger swipe workspace switching by collapsing to a single workspace.
+  // The gesture still fires but has nowhere to go — touchpad remains fully usable.
+  exec("gsettings set org.gnome.mutter dynamic-workspaces false", () => {});
+  exec("gsettings set org.gnome.desktop.wm.preferences num-workspaces 1", (err) => {
+    if (err) console.warn('[ExamGuard] Could not lock workspaces:', err.message);
+    else console.log('[ExamGuard] Workspaces locked to 1 — 3-finger swipe gestures neutralized.');
   });
 }
 
@@ -353,18 +345,11 @@ function restoreSuperKey() {
     exec(`gsettings reset org.gnome.desktop.wm.keybindings ${k}`, () => {});
   });
 
-  // Restore 3-finger touchpad swipe gestures
-  exec("xinput list --name-only", (err, stdout) => {
-    if (err) return;
-    const devices = stdout.split('\n').filter(d =>
-      /touchpad|trackpad|synaptics/i.test(d)
-    );
-    devices.forEach(deviceName => {
-      const name = deviceName.trim();
-      if (!name) return;
-      exec(`xinput set-prop "${name}" "libinput Gesture Swipe Enable" 1`, () => {});
-      console.log(`[ExamGuard] Swipe gestures restored for: ${name}`);
-    });
+  // Restore workspaces to dynamic
+  exec("gsettings set org.gnome.mutter dynamic-workspaces true", () => {});
+  exec("gsettings reset org.gnome.desktop.wm.preferences num-workspaces", (err) => {
+    if (err) console.warn('[ExamGuard] Could not restore workspaces:', err.message);
+    else console.log('[ExamGuard] Workspaces restored.');
   });
 }
 
