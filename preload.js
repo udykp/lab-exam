@@ -18,5 +18,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   saveLocalFile: (folderName, fileName, content) => {
     return ipcRenderer.invoke('save-local-file', folderName, fileName, content);
+  },
+  // Local code execution
+  runCode: (code, language) => {
+    ipcRenderer.send('run-code', { code, language });
+  },
+  stopCode: () => {
+    ipcRenderer.send('stop-code');
+  },
+  onCodeOutput: (callback) => {
+    ipcRenderer.on('code-output', (event, data) => callback(data));
+  },
+  onCodeExit: (callback) => {
+    ipcRenderer.on('code-exit', (event, data) => callback(data));
+  },
+  removeCodeListeners: () => {
+    ipcRenderer.removeAllListeners('code-output');
+    ipcRenderer.removeAllListeners('code-exit');
+  },
+  sendStdin: (text) => {
+    ipcRenderer.send('code-stdin', text);
   }
 });

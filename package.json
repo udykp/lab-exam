@@ -4,7 +4,7 @@
   "description": "Secure ML Exam Platform Desktop Client",
   "main": "main.js",
   "scripts": {
-    "build:backend": "go build -o bin/server ./cmd/server",
+    "build:backend": "go build -C exams -o ../bin/server",
     "start": "npm run build:backend && electron . --no-sandbox",
     "package": "npm run build:backend && electron-builder"
   },

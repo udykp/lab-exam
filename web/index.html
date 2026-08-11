@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SecureMLExam</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <!-- Frameless Window Close Button (Active only on login screen) -->
@@ -49,6 +49,7 @@
           <div class="segmented hidden">
             <button class="segmented-btn active" data-mode="student">Student</button>
             <button class="segmented-btn" data-mode="faculty">Faculty</button>
+            <button class="segmented-btn" data-mode="admin">Admin</button>
           </div>
         </div>
 
@@ -62,13 +63,13 @@
             <span>Roll Number</span>
             <input name="rollNumber" placeholder="220101" />
           </label>
-          <label class="faculty-only hidden">
-            <span>Email</span>
-            <input name="email" placeholder="faculty@securemlexam.local" />
+          <label class="faculty-admin-only hidden">
+            <span>Email / Username</span>
+            <input name="email" placeholder="admin@gmail.com / faculty@gmail.com" />
           </label>
-          <label class="faculty-only hidden">
+          <label class="faculty-admin-only hidden">
             <span>Password</span>
-            <input name="password" type="password" placeholder="Admin@123" />
+            <input name="password" type="password" placeholder="••••••••" />
           </label>
           <label class="student-only">
             <span>Exam ID</span>
@@ -218,37 +219,253 @@
         </div>
 
         <div id="facultyView" class="view stack hidden">
+          <!-- TOP GRID: Teaching assignments -->
           <div class="subgrid">
-            <section class="mini-card">
-              <h3>Import Students</h3>
-              <p>Upload an Excel roster with Name and Roll Number columns.</p>
-              <input id="rosterFile" type="file" accept=".xlsx,.xls" />
-              <button id="importRosterBtn" class="secondary" type="button">Upload Excel</button>
-            </section>
-
-            <section class="mini-card">
-              <h3>Assign Chit</h3>
-              <label><span>Roll Number</span><input id="assignRoll" placeholder="220101" /></label>
-              <label><span>Question Number</span><input id="assignQuestion" placeholder="4" /></label>
-              <button id="assignBtn" class="primary" type="button">Assign Question</button>
+            <section class="mini-card" style="flex: 1;">
+              <h3>Your teaching assignments</h3>
+              <p style="color: #71717a; font-size: 0.85rem; margin-top: -6px; margin-bottom: 12px;">Choose a subject/class to see its exams.</p>
+              <div id="facultyAssignmentList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;">
+                <!-- Card items populated dynamically -->
+              </div>
             </section>
           </div>
 
-          <section class="mini-card">
-            <h3>Questions</h3>
-            <p>Fixed question bank for the exam.</p>
-            <div id="questionBank" class="question-bank"></div>
-          </section>
+          <!-- MIDDLE GRID: Create Exam & Existing Exams (visible only when assignment selected) -->
+          <div id="facultyExamsSection" class="subgrid hidden" style="margin-top: 1rem; display: flex; gap: 16px;">
+            <!-- Create a new exam -->
+            <section class="mini-card" style="flex: 1;">
+              <h3>Create a new exam</h3>
+              <label><span>Exam title</span><input id="examTitleInput" placeholder="e.g. Internal Assessment 1" /></label>
+              <button id="createExamBtn" class="primary" type="button" style="margin-top: 10px; width: 100%;">Create draft exam</button>
+            </section>
 
-          <section class="mini-card">
-            <h3>Students</h3>
-            <div id="studentList" class="list"></div>
-          </section>
+            <!-- Existing exams -->
+            <section class="mini-card" style="flex: 1.5;">
+              <h3>Existing exams</h3>
+              <div id="facultyExamsList" class="stack" style="gap: 12px; margin-top: 10px;">
+                <!-- dynamic exam rows -->
+              </div>
+            </section>
+          </div>
+
+          <!-- BOTTOM AREA: Selected Exam Details Panel -->
+          <div id="examDetailsSection" class="mini-card stack hidden" style="margin-top: 1.5rem; background: #ffffff !important; border: 1px solid #e4e4e7 !important; padding: 24px; border-radius: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e4e4e7; padding-bottom: 12px;">
+              <div>
+                <h3 id="examDetailTitle" style="margin: 0; color: #18181b;">Midterm 1</h3>
+                <p id="examDetailMeta" style="margin: 4px 0 0 0; color: #71717a; font-size: 0.9rem;">Machine Learning - 2026 - CSE-DS - draft</p>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button id="closeExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem;">Close</button>
+                <div id="examDetailStatusActions" style="display: flex; gap: 8px;">
+                  <!-- Rename, Publish, Archive, Delete buttons -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Question-paper sets -->
+            <div style="margin-top: 1.5rem;">
+              <h4>Question-paper sets</h4>
+              <div id="examPaperSetsList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 8px;">
+                <!-- populated dynamically with set A, set B cards -->
+              </div>
+              <div class="actions-row" style="margin-top: 12px; max-width: 460px; display: flex; gap: 8px; align-items: flex-end;">
+                <label style="flex: 1; margin: 0;">
+                  <span>New Set Title</span>
+                  <input id="newSetTitleInput" placeholder="e.g. Set B" />
+                </label>
+                <button id="createNewSetBtn" class="secondary" type="button" style="padding: 10px 16px;">Create new set</button>
+              </div>
+            </div>
+
+            <!-- Question Editing & Management inside Selected Set -->
+            <div id="selectedSetSection" class="stack hidden" style="margin-top: 1.5rem; border-top: 1px solid #e4e4e7; padding-top: 1.5rem;">
+              <h4 id="selectedSetTitle">Editing: Set A</h4>
+              
+              <!-- Questions List -->
+              <div id="examQuestionsList" class="stack" style="gap: 12px; margin-top: 10px; margin-bottom: 1.5rem;">
+                <!-- Dynamic questions list -->
+              </div>
+
+              <!-- Add questions form -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px;">
+                <h5>Add questions to selected set</h5>
+                <div class="subgrid" style="margin-top: 8px; gap: 12px; display: flex;">
+                  <label style="flex: 1;"><span>Number</span><input id="qNumInput" type="number" placeholder="1" /></label>
+                  <label style="flex: 1;"><span>Marks</span><input id="qMarksInput" type="number" placeholder="5" /></label>
+                </div>
+                <label style="margin-top: 8px;"><span>Question text</span><textarea id="qTextInput" placeholder="Write question prompt..." style="min-height: 80px;"></textarea></label>
+                <button id="addQuestionBtn" class="primary" type="button" style="margin-top: 12px; width: 100%;">Add question</button>
+              </div>
+
+              <!-- Assign set to student -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-top: 1.5rem;">
+                <h5>Assign a complete set to a student</h5>
+                <p style="color: #71717a; font-size: 0.85rem; margin-top: -4px;">Choose a student from this class to assign this question paper set.</p>
+                <div class="actions-row" style="margin-top: 10px; display: flex; gap: 8px; align-items: flex-end;">
+                  <label style="flex: 1; margin: 0;">
+                    <span>Select Student</span>
+                    <select id="assignStudentSelect" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; padding: 8px 12px; font-weight: 600; color: #18181b; width: 100%;">
+                      <!-- populated dynamically with student roster of class -->
+                    </select>
+                  </label>
+                  <button id="assignSetToStudentBtn" class="primary" type="button" style="padding: 10px 16px; white-space: nowrap;">Choose student and assign set</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="adminView" class="view stack hidden">
+          <!-- Admin Tab Buttons -->
+          <div class="admin-tabs" style="display: flex; gap: 8px; border-bottom: 2px solid #e4e4e7; margin-bottom: 1.5rem; padding-bottom: 4px;">
+            <button class="secondary active admin-tab-btn" data-tab="adminFacultyTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Faculty Accounts</button>
+            <button class="secondary admin-tab-btn" data-tab="adminSubjectsTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Subjects</button>
+            <button class="secondary admin-tab-btn" data-tab="adminAssignmentsTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Teaching Assignments</button>
+            <button class="secondary admin-tab-btn" data-tab="adminRosterTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Import Students</button>
+          </div>
+
+          <!-- Tab 1: Faculty Accounts -->
+          <div id="adminFacultyTab" class="admin-tab-content stack">
+            <div class="subgrid">
+              <section class="mini-card">
+                <h3>Create Faculty Login</h3>
+                <p>Create a new credential to allow faculty to log in.</p>
+                <label><span>Name</span><input id="facNameInput" placeholder="Dr. Jane Doe" /></label>
+                <label><span>Email</span><input id="facEmailInput" type="email" placeholder="jane.doe@gmail.com" /></label>
+                <label><span>Password</span><input id="facPasswordInput" type="password" placeholder="••••••••" /></label>
+                <button id="createFacultyBtn" class="primary" type="button" style="margin-top: 10px;">Create Faculty</button>
+              </section>
+              <section class="mini-card" style="flex: 2;">
+                <h3>Faculty Accounts</h3>
+                <div style="overflow-x: auto; margin-top: 10px;">
+                  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                      <tr style="border-bottom: 2px solid #e4e4e7; color: #71717a;">
+                        <th style="padding: 10px 12px;">Name</th>
+                        <th style="padding: 10px 12px;">Email</th>
+                        <th style="padding: 10px 12px; text-align: center;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminFacultyList">
+                      <!-- Dynamic faculty rows -->
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- Tab 2: Subjects -->
+          <div id="adminSubjectsTab" class="admin-tab-content stack hidden">
+            <div class="subgrid">
+              <section class="mini-card">
+                <h3>Create Subject</h3>
+                <p>Add a new subject to the database.</p>
+                <label><span>Subject Code</span><input id="subCodeInput" placeholder="CS101" /></label>
+                <label><span>Subject Name</span><input id="subNameInput" placeholder="Computer Science" /></label>
+                <button id="createSubjectBtn" class="primary" type="button" style="margin-top: 10px;">Create Subject</button>
+              </section>
+              <section class="mini-card" style="flex: 2;">
+                <h3>Subjects List</h3>
+                <div style="overflow-x: auto; margin-top: 10px;">
+                  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                      <tr style="border-bottom: 2px solid #e4e4e7; color: #71717a;">
+                        <th style="padding: 10px 12px;">Code</th>
+                        <th style="padding: 10px 12px;">Name</th>
+                        <th style="padding: 10px 12px; text-align: center;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminSubjectsList">
+                      <!-- Dynamic subject rows -->
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- Tab 3: Teaching Assignments -->
+          <div id="adminAssignmentsTab" class="admin-tab-content stack hidden">
+            <div class="subgrid">
+              <section class="mini-card">
+                <h3>Assign Teacher</h3>
+                <p>Map a faculty member to a subject and class section.</p>
+                <label>
+                  <span>Select Faculty</span>
+                  <select id="assignFacultySelect" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; padding: 8px 12px; font-weight: 600; color: #18181b;">
+                    <!-- populated dynamically -->
+                  </select>
+                </label>
+                <label>
+                  <span>Select Subject</span>
+                  <select id="assignSubjectSelect" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; padding: 8px 12px; font-weight: 600; color: #18181b;">
+                    <!-- populated dynamically -->
+                  </select>
+                </label>
+                <label><span>Year</span><input id="assignYearInput" placeholder="2026" /></label>
+                <label><span>Semester</span><input id="assignSemesterInput" placeholder="3" /></label>
+                <label><span>Section</span><input id="assignSectionInput" placeholder="A" /></label>
+                <button id="createAssignmentBtn" class="primary" type="button" style="margin-top: 10px;">Create Assignment</button>
+              </section>
+              <section class="mini-card" style="flex: 2;">
+                <h3>Teaching Assignments</h3>
+                <div style="overflow-x: auto; margin-top: 10px;">
+                  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                      <tr style="border-bottom: 2px solid #e4e4e7; color: #71717a;">
+                        <th style="padding: 10px 12px;">Faculty</th>
+                        <th style="padding: 10px 12px;">Subject</th>
+                        <th style="padding: 10px 12px;">Class (Yr/Sem/Sec)</th>
+                        <th style="padding: 10px 12px; text-align: center;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminAssignmentsList">
+                      <!-- Dynamic assignment rows -->
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- Tab 4: Import Students -->
+          <div id="adminRosterTab" class="admin-tab-content stack hidden">
+            <div class="subgrid">
+              <section class="mini-card">
+                <h3>Upload Student Roster</h3>
+                <p>Upload an Excel roster to populate students database for a class.</p>
+                <label><span>Year</span><input id="rosterYearInput" placeholder="2026" /></label>
+                <label><span>Semester</span><input id="rosterSemesterInput" placeholder="3" /></label>
+                <label><span>Section</span><input id="rosterSectionInput" placeholder="A" /></label>
+                <input id="adminRosterFile" type="file" accept=".xlsx,.xls,.csv" style="margin-top: 10px;" />
+                <button id="adminImportRosterBtn" class="secondary" type="button" style="margin-top: 10px;">Upload Excel/CSV</button>
+              </section>
+              <section class="mini-card" style="flex: 2;">
+                <h3>Uploaded Roster Batches</h3>
+                <div style="overflow-x: auto; margin-top: 10px;">
+                  <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                      <tr style="border-bottom: 2px solid #e4e4e7; color: #71717a;">
+                        <th style="padding: 10px 12px;">Class</th>
+                        <th style="padding: 10px 12px;">Filename</th>
+                        <th style="padding: 10px 12px;">Uploaded At</th>
+                      </tr>
+                    </thead>
+                    <tbody id="adminRosterBatchesList">
+                      <!-- Dynamic roster batches -->
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
       </article>
     </section>
   </main>
 
-  <script src="/assets/app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

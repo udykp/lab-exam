@@ -90,7 +90,7 @@ function createWindow() {
   } else {
     // Poll local server until it responds, then load URL
     const checkInterval = setInterval(() => {
-      http.get(`${targetServerUrl}/healthz`, (res) => {
+      http.get(`${targetServerUrl}/health`, (res) => {
         if (res.statusCode === 200) {
           clearInterval(checkInterval);
           mainWindow.loadURL(targetServerUrl);
@@ -426,6 +426,164 @@ ipcMain.handle('save-local-file', async (event, folderName, fileName, content) =
     return { success: false, error: err.message };
   }
 });
+
+// ── Local Code Runner ────────────────────────────────────────────────────────
+// Supports: Python, Java, C, C++, R, MySQL — executed locally on the machine.
+let runningProcess = null;
+let tempFiles = [];
+
+const os = require('os');
+
+function cleanupTempFiles() {
+  tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch (_) {} });
+  tempFiles = [];
+}
+
+function sendOutput(event, data, stream = 'stdout') {
+  event.sender.send('code-output', { stream, data });
+}
+
+function spawnAndStream(event, cmd, args, opts = {}) {
+  const proc = spawn(cmd, args, { env: process.env, ...opts });
+  runningProcess = proc;
+
+  proc.stdout.on('data', (d) => sendOutput(event, d.toString(), 'stdout'));
+  proc.stderr.on('data', (d) => sendOutput(event, d.toString(), 'stderr'));
+
+  return new Promise((resolve) => {
+    proc.on('close', (code) => { runningProcess = null; resolve(code); });
+    proc.on('error', (err) => { runningProcess = null; resolve(1); sendOutput(event, err.message, 'stderr'); });
+  });
+}
+
+ipcMain.on('run-code', async (event, { code, language }) => {
+  // Kill any previous run
+  if (runningProcess) {
+    try { runningProcess.kill('SIGKILL'); } catch (_) {}
+    runningProcess = null;
+  }
+  cleanupTempFiles();
+
+  const lang = (language || 'python').toLowerCase();
+  const ts = Date.now();
+  let exitCode = 0;
+
+  try {
+    // ── Python ──────────────────────────────────────────────────────────────
+    if (lang.includes('python')) {
+      const pyFile = path.join(os.tmpdir(), `exam_${ts}.py`);
+      tempFiles.push(pyFile);
+      fs.writeFileSync(pyFile, code, 'utf8');
+      exitCode = await spawnAndStream(event, 'python3', ['-u', pyFile]);
+    }
+
+    // ── Java ────────────────────────────────────────────────────────────────
+    else if (lang.includes('java')) {
+      // Extract public class name (or default to ExamCode)
+      const classMatch = code.match(/public\s+class\s+(\w+)/);
+      const className = classMatch ? classMatch[1] : 'ExamCode';
+      const tmpDir = path.join(os.tmpdir(), `exam_java_${ts}`);
+      fs.mkdirSync(tmpDir, { recursive: true });
+      const javaFile = path.join(tmpDir, `${className}.java`);
+      tempFiles.push(tmpDir);
+      fs.writeFileSync(javaFile, code, 'utf8');
+
+      sendOutput(event, `Compiling ${className}.java...\n`);
+      exitCode = await spawnAndStream(event, 'javac', [javaFile]);
+      if (exitCode === 0) {
+        sendOutput(event, `Running ${className}...\n`);
+        exitCode = await spawnAndStream(event, 'java', ['-cp', tmpDir, className]);
+      }
+      // cleanup dir
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+      tempFiles = tempFiles.filter(f => f !== tmpDir);
+    }
+
+    // ── C ───────────────────────────────────────────────────────────────────
+    else if (lang === 'c') {
+      const cFile = path.join(os.tmpdir(), `exam_${ts}.c`);
+      const binFile = path.join(os.tmpdir(), `exam_${ts}`);
+      tempFiles.push(cFile, binFile);
+      fs.writeFileSync(cFile, code, 'utf8');
+
+      sendOutput(event, 'Compiling C code...\n');
+      exitCode = await spawnAndStream(event, 'gcc', [cFile, '-o', binFile, '-lm']);
+      if (exitCode === 0) {
+        sendOutput(event, 'Running...\n');
+        exitCode = await spawnAndStream(event, binFile, []);
+      }
+    }
+
+    // ── C++ ─────────────────────────────────────────────────────────────────
+    else if (lang.includes('c++') || lang.includes('cpp')) {
+      const cppFile = path.join(os.tmpdir(), `exam_${ts}.cpp`);
+      const binFile = path.join(os.tmpdir(), `exam_${ts}`);
+      tempFiles.push(cppFile, binFile);
+      fs.writeFileSync(cppFile, code, 'utf8');
+
+      sendOutput(event, 'Compiling C++ code...\n');
+      exitCode = await spawnAndStream(event, 'g++', [cppFile, '-o', binFile, '-lm', '-std=c++17']);
+      if (exitCode === 0) {
+        sendOutput(event, 'Running...\n');
+        exitCode = await spawnAndStream(event, binFile, []);
+      }
+    }
+
+    // ── R ───────────────────────────────────────────────────────────────────
+    else if (lang === 'r' || lang.includes('rscript')) {
+      const rFile = path.join(os.tmpdir(), `exam_${ts}.R`);
+      tempFiles.push(rFile);
+      fs.writeFileSync(rFile, code, 'utf8');
+      exitCode = await spawnAndStream(event, 'Rscript', ['--vanilla', rFile]);
+    }
+
+    // ── MySQL ────────────────────────────────────────────────────────────────
+    // Uses exam_user/exam_password on labexam DB — set up by setup_env.sh
+    else if (lang.includes('mysql') || lang.includes('sql')) {
+      const sqlFile = path.join(os.tmpdir(), `exam_${ts}.sql`);
+      tempFiles.push(sqlFile);
+      fs.writeFileSync(sqlFile, code, 'utf8');
+      exitCode = await spawnAndStream(event, 'mysql', [
+        '-u', 'exam_user',
+        '-pexam_password',
+        'labexam',
+        '--table',
+        '-e', code
+      ]);
+    }
+
+    // ── Unknown ──────────────────────────────────────────────────────────────
+    else {
+      sendOutput(event, `[Error]: Language "${language}" is not supported.\nSupported: Python, Java, C, C++, R, MySQL\n`, 'stderr');
+      exitCode = 1;
+    }
+  } catch (err) {
+    sendOutput(event, `[Runner Error]: ${err.message}\n`, 'stderr');
+    exitCode = 1;
+  }
+
+  cleanupTempFiles();
+  event.sender.send('code-exit', { exitCode });
+});
+
+ipcMain.on('stop-code', (event) => {
+  if (runningProcess) {
+    try { runningProcess.kill('SIGKILL'); } catch (_) {}
+    runningProcess = null;
+    event.sender.send('code-exit', { exitCode: -1, error: 'Stopped by user.' });
+  }
+  cleanupTempFiles();
+});
+
+// Pipe keyboard input from the terminal UI into the running process stdin
+ipcMain.on('code-stdin', (event, text) => {
+  if (runningProcess && runningProcess.stdin && !runningProcess.stdin.destroyed) {
+    try {
+      runningProcess.stdin.write(text + '\n');
+    } catch (_) {}
+  }
+});
+
 
 // Exit exam - called after student voluntarily ends or is terminated
 // Since the app can run as root, app.quit() has full OS privileges to

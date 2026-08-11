@@ -1,3 +1,5 @@
+const DEMO_ROLL = 'DEMO'; // Special roll number — bypasses all security restrictions
+
 const state = {
   mode: 'student',
   token: localStorage.getItem('securemlexam_token') || '',
@@ -8,6 +10,7 @@ const state = {
   examId: 'exam-1',
   ws: null,
   securityArmed: false,
+  demoMode: false,  // true for DEMO roll — no restrictions
   questions: [],
   activeQuestionIndex: 0,
   drafts: {},
@@ -109,17 +112,33 @@ const setHidden = (selector, hidden) => {
 };
 
 const setMode = (mode) => {
+  if (mode === 'student' && !window.electronAPI) {
+    mode = 'faculty';
+  }
   state.mode = mode;
   loginForm.role.value = mode;
   document.querySelectorAll('.segmented-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === mode));
   setHidden('.student-only', mode !== 'student');
   setHidden('.faculty-only', mode !== 'faculty');
+  setHidden('.admin-only', mode !== 'admin');
+  setHidden('.faculty-admin-only', mode === 'student');
+  
   studentView.classList.toggle('hidden', mode !== 'student');
   facultyView.classList.toggle('hidden', mode !== 'faculty');
-  workspaceTitle.textContent = mode === 'student' ? 'Student Workspace' : 'Faculty Dashboard';
-  workspaceHint.textContent = mode === 'student'
-    ? 'Login as a student to load your assigned question.'
-    : 'Manage roster import, question bank, and chit assignment here.';
+  
+  const adminView = el('adminView');
+  if (adminView) adminView.classList.toggle('hidden', mode !== 'admin');
+  
+  if (mode === 'student') {
+    workspaceTitle.textContent = 'Student Workspace';
+    workspaceHint.textContent = 'Login as a student to load your assigned question.';
+  } else if (mode === 'faculty') {
+    workspaceTitle.textContent = 'Faculty Dashboard';
+    workspaceHint.textContent = 'Manage roster import, question bank, and chit assignment here.';
+  } else if (mode === 'admin') {
+    workspaceTitle.textContent = 'Admin Control Center';
+    workspaceHint.textContent = 'Manage faculty accounts, assign subjects/classes, and upload student rosters.';
+  }
 };
 
 const api = async (path, options = {}) => {
@@ -154,7 +173,7 @@ const renderToken = () => {
 
 const loadStatus = async () => {
   try {
-    await api('/healthz', { headers: {} });
+    await api('/health', { headers: {} });
     serverStatus.textContent = 'Server online';
     statusText.textContent = 'Connected to localhost:8080';
   } catch (error) {
@@ -255,10 +274,31 @@ const saveAllProgramsLocally = async () => {
 const loadStudentExam = async () => {
   if (!state.token) return;
   try {
-    const data = await api(`/api/v1/student/exam?exam_id=${encodeURIComponent(state.examId)}`);
-    examLabel.textContent = `${data.exam.title} (${data.exam.id})`;
-    
-    state.questions = data.questions || [];
+    let assignments = [];
+
+    if (state.demoMode) {
+      // Inject sample questions for every supported language
+      examLabel.textContent = 'Demo Test Environment';
+      state.questions = [
+        { id: 'demo-py',    number: 1, title: 'Python',  prompt: 'Print "Hello from Python!" and show the sum of 1 to 10.' },
+        { id: 'demo-java',  number: 2, title: 'Java',    prompt: 'Write a Java program that prints "Hello from Java!" and computes 5 factorial.' },
+        { id: 'demo-c',     number: 3, title: 'C',       prompt: 'Write a C program that prints "Hello from C!" and shows the first 5 Fibonacci numbers.' },
+        { id: 'demo-cpp',   number: 4, title: 'C++',     prompt: 'Write a C++ program that prints "Hello from C++!" and sorts an array of 5 numbers.' },
+        { id: 'demo-r',     number: 5, title: 'R',       prompt: 'Write an R script that prints "Hello from R!" and computes mean of c(1,2,3,4,5).' },
+        { id: 'demo-sql',   number: 6, title: 'MySQL',   prompt: 'Write a MySQL query: SELECT VERSION(); and SHOW DATABASES;' },
+      ];
+    } else {
+      const res = await api(`/api/assignments?roll_no=${encodeURIComponent(state.rollNumber)}`);
+      assignments = res.data || [];
+      examLabel.textContent = `Assigned Lab Exam`;
+      state.questions = assignments.map((a, idx) => ({
+        id: a.id,
+        number: idx + 1,
+        title: `Question ${idx + 1}`,
+        prompt: a.question_text
+      })) || [];
+    }
+
     state.drafts = {};
     state.activeQuestionIndex = 0;
 
@@ -406,18 +446,23 @@ const loadStudentExam = async () => {
     el('endExamBtn').classList.remove('hidden');  // show End Exam button now
 
     // Lock window into exam mode: blocks split-screen, resize, and minimize
-    if (window.electronAPI) {
+    // Skipped in demo mode so the tester can freely interact with the system.
+    if (window.electronAPI && !state.demoMode) {
       window.electronAPI.requestFullscreen(true);
       window.electronAPI.lockExamWindow();
     }
 
-    logEvent(`Loaded exam with ${state.questions.length} questions.`);
+    logEvent(`Loaded exam with ${state.questions.length} questions.${state.demoMode ? ' [DEMO MODE — no restrictions]' : ''}`);
 
-    // Arm security focus checks after a 2-second delay to ignore transient transition blur events
-    setTimeout(() => {
-      state.securityArmed = true;
-      console.log('[ExamGuard] Security focus checks armed.');
-    }, 2000);
+    // Arm security focus checks (skipped in demo mode)
+    if (!state.demoMode) {
+      setTimeout(() => {
+        state.securityArmed = true;
+        console.log('[ExamGuard] Security focus checks armed.');
+      }, 2000);
+    } else {
+      console.log('[ExamGuard] DEMO MODE — security checks disabled.');
+    }
   } catch (error) {
     if (error.message.includes('security violation')) {
       triggerViolationShutdown('lockout', 'Student has been permanently locked out due to previous security violation.');
@@ -444,22 +489,413 @@ const loadStudentExam = async () => {
 
 const loadFacultyData = async () => {
   if (!state.token) return;
-  const [questions, students] = await Promise.all([
-    api('/api/v1/faculty/exams/exam-1/questions'),
-    api('/api/v1/faculty/students'),
-  ]);
-  questionBank.innerHTML = questions.map((question) => `
-    <div class="question-chip">
-      <strong>${question.number}. ${question.title}</strong>
-      <div>${question.prompt}</div>
-    </div>
-  `).join('');
-  studentList.innerHTML = students.map((student) => `
-    <div class="student-chip">
-      <strong>${student.name}</strong>
-      <div>Roll: ${student.roll_number}</div>
-    </div>
-  `).join('');
+  try {
+    const profile = await api('/api/me');
+    state.name = profile.data.faculty.name || '';
+    state.assignments = profile.data.assignments || [];
+    renderAuthLayout();
+
+    // Render My Teaching Assignments
+    const assignmentList = el('facultyAssignmentList');
+    if (assignmentList) {
+      if (state.assignments.length === 0) {
+        assignmentList.innerHTML = `<p style="color: #71717a; font-size: 0.9rem; margin: 0;">No teaching assignments found.</p>`;
+      } else {
+        assignmentList.innerHTML = state.assignments.map((item) => `
+          <div class="assignment-card" data-id="${item.id}" style="background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: all 0.2s ease;">
+            <div style="font-weight: bold; color: #18181b; font-size: 1.05rem;">${item.subject.name}</div>
+            <div style="font-size: 0.85rem; color: #71717a;">${item.subject.code} • Yr ${item.year} - Semester ${item.semester}</div>
+            <div style="font-size: 0.85rem; color: #71717a;">Class: ${item.section}</div>
+          </div>
+        `).join('');
+
+        assignmentList.querySelectorAll('.assignment-card').forEach((card) => {
+          card.addEventListener('click', async (e) => {
+            // Remove active style from other cards
+            assignmentList.querySelectorAll('.assignment-card').forEach(c => {
+              c.style.borderColor = '#e4e4e7';
+              c.style.boxShadow = '';
+            });
+            // Highlight selected card
+            card.style.borderColor = '#3b82f6';
+            card.style.boxShadow = '0 0 0 2px rgba(59, 130, 246, 0.2)';
+
+            const assignmentId = card.dataset.id;
+            state.activeAssignmentId = assignmentId;
+            
+            // Show exams section
+            el('facultyExamsSection').classList.remove('hidden');
+            // Hide bottom details if visible
+            el('examDetailsSection').classList.add('hidden');
+            el('selectedSetSection').classList.add('hidden');
+
+            await loadExamsForAssignment(assignmentId);
+          });
+        });
+      }
+    }
+  } catch (err) {
+    logEvent(`Failed to load faculty data: ${err.message}`);
+  }
+};
+
+const loadExamsForAssignment = async (assignmentId) => {
+  try {
+    const examsRes = await api('/api/faculty/exams');
+    const exams = (examsRes.data || []).filter(ex => ex.faculty_assignment_id === assignmentId);
+    state.exams = exams;
+
+    const examsList = el('facultyExamsList');
+    if (examsList) {
+      if (exams.length === 0) {
+        examsList.innerHTML = `<p style="color: #71717a; font-size: 0.9rem; margin: 10px 0;">No exams created for this assignment yet.</p>`;
+      } else {
+        examsList.innerHTML = exams.map((exam) => {
+          const dt = exam.created_at ? new Date(exam.created_at).toLocaleString() : 'N/A';
+          return `
+            <div style="background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 12px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div>
+                <div style="font-weight: 600; color: #18181b;">${exam.title}</div>
+                <div style="font-size: 0.8rem; color: #71717a; text-transform: capitalize;">${exam.status} • ${dt}</div>
+              </div>
+              <button class="secondary open-exam-btn" data-id="${exam.id}" style="padding: 6px 12px; font-size: 0.85rem;">Open</button>
+            </div>
+          `;
+        }).join('');
+
+        examsList.querySelectorAll('.open-exam-btn').forEach((btn) => {
+          btn.addEventListener('click', () => loadExamDetails(btn.dataset.id));
+        });
+      }
+    }
+  } catch (err) {
+    logEvent(`Failed to load exams: ${err.message}`);
+  }
+};
+
+const loadExamDetails = async (examId) => {
+  try {
+    const res = await api(`/api/faculty/exams/${examId}`);
+    const exam = res.data.exam;
+    const papers = res.data.papers || [];
+    state.papers = papers;
+
+    state.activeExamId = examId;
+
+    const detailsSec = el('examDetailsSection');
+    detailsSec.classList.remove('hidden');
+    detailsSec.scrollIntoView({ behavior: 'smooth' });
+
+    el('examDetailTitle').textContent = exam.title;
+    el('examDetailMeta').innerHTML = `Subject: <strong>${exam.subject}</strong> | Class: Yr ${exam.year} / Sem ${exam.semester} / Sec ${exam.section} | Status: <strong style="text-transform: capitalize;">${exam.status}</strong>`;
+
+    // Render action buttons based on status
+    const actionsContainer = el('examDetailStatusActions');
+    if (actionsContainer) {
+      actionsContainer.innerHTML = `
+        <button id="renameExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem;">Rename</button>
+        ${exam.status === 'draft' ? `<button id="publishExamBtn" class="primary" style="padding: 6px 12px; font-size: 0.85rem; background: #2563eb !important; border-color: #2563eb !important;">Publish</button>` : ''}
+        ${exam.status === 'published' ? `<button id="archiveExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem; border-color: #71717a !important; color: #71717a !important;">Archive</button>` : ''}
+        <button id="deleteExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important;">Delete</button>
+      `;
+
+      el('renameExamBtn').addEventListener('click', async () => {
+        const newTitle = prompt('Enter new exam title:', exam.title);
+        if (newTitle && newTitle.trim()) {
+          try {
+            await api(`/api/faculty/exams/${examId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title: newTitle.trim() }),
+            });
+            logEvent('Renamed exam');
+            await loadExamDetails(examId);
+            await loadExamsForAssignment(state.activeAssignmentId);
+          } catch (err) { alert(err.message); }
+        }
+      });
+
+      if (el('publishExamBtn')) {
+        el('publishExamBtn').addEventListener('click', async () => {
+          if (confirm('Publish this exam? This will lock questions and make papers assignable.')) {
+            try {
+              await api(`/api/faculty/exams/${examId}/publish`, { method: 'POST' });
+              logEvent('Published exam');
+              await loadExamDetails(examId);
+              await loadExamsForAssignment(state.activeAssignmentId);
+            } catch (err) { alert(err.message); }
+          }
+        });
+      }
+
+      if (el('archiveExamBtn')) {
+        el('archiveExamBtn').addEventListener('click', async () => {
+          if (confirm('Archive this exam?')) {
+            try {
+              await api(`/api/faculty/exams/${examId}/archive`, { method: 'POST' });
+              logEvent('Archived exam');
+              await loadExamDetails(examId);
+              await loadExamsForAssignment(state.activeAssignmentId);
+            } catch (err) { alert(err.message); }
+          }
+        });
+      }
+
+      el('deleteExamBtn').addEventListener('click', async () => {
+        if (confirm('Delete this exam completely?')) {
+          try {
+            await api(`/api/faculty/exams/${examId}`, { method: 'DELETE' });
+            logEvent('Deleted exam');
+            detailsSec.classList.add('hidden');
+            el('selectedSetSection').classList.add('hidden');
+            await loadExamsForAssignment(state.activeAssignmentId);
+          } catch (err) { alert(err.message); }
+        }
+      });
+    }
+
+    // Render Question-Paper Sets (papers)
+    const paperSetsList = el('examPaperSetsList');
+    if (paperSetsList) {
+      if (papers.length === 0) {
+        paperSetsList.innerHTML = `<p style="color: #71717a; font-size: 0.9rem; margin: 0;">No question-paper sets found.</p>`;
+        el('selectedSetSection').classList.add('hidden');
+      } else {
+        paperSetsList.innerHTML = papers.map((paper, idx) => {
+          const displayTitle = idx === 0 ? "SET A" : paper.title;
+          return `
+            <div class="paper-set-card" data-id="${paper.id}" style="background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s ease;">
+              <div style="font-weight: bold; color: #18181b;">${displayTitle}</div>
+              <div style="font-size: 0.85rem; color: #71717a; margin-top: 4px;">set ${idx + 1} - ${paper.questions ? paper.questions.length : 0} question(s)</div>
+            </div>
+          `;
+        }).join('');
+
+        paperSetsList.querySelectorAll('.paper-set-card').forEach((card) => {
+          card.addEventListener('click', () => {
+            // Highlight set card
+            paperSetsList.querySelectorAll('.paper-set-card').forEach(c => {
+              c.style.borderColor = '#e4e4e7';
+              c.style.boxShadow = '';
+            });
+            card.style.borderColor = '#3b82f6';
+            card.style.boxShadow = '0 0 0 2px rgba(59, 130, 246, 0.2)';
+
+            loadPaperDetails(card.dataset.id, exam.status);
+          });
+        });
+
+        // Automatically default to the first set (e.g. Set A / index 0)
+        let activePaperId = state.activePaperId;
+        if (!activePaperId || !papers.some(p => p.id === activePaperId)) {
+          activePaperId = papers[0].id;
+        }
+
+        const activeCard = paperSetsList.querySelector(`.paper-set-card[data-id="${activePaperId}"]`);
+        if (activeCard) {
+          activeCard.style.borderColor = '#3b82f6';
+          activeCard.style.boxShadow = '0 0 0 2px rgba(59, 130, 246, 0.2)';
+        }
+        loadPaperDetails(activePaperId, exam.status);
+      }
+    }
+  } catch (err) {
+    alert('Failed to load exam details: ' + err.message);
+  }
+};
+
+const loadPaperDetails = async (paperId, examStatus) => {
+  try {
+    state.activePaperId = paperId;
+    const paper = state.papers.find(p => p.id === paperId);
+    if (!paper) return;
+
+    const questions = paper.questions || [];
+
+    const setSection = el('selectedSetSection');
+    setSection.classList.remove('hidden');
+
+    const paperCard = document.querySelector(`.paper-set-card[data-id="${paperId}"]`);
+    const paperTitle = paperCard ? paperCard.querySelector('div').textContent : 'Set';
+    el('selectedSetTitle').textContent = `Editing: ${paperTitle}`;
+
+    // Render questions list
+    const questionsList = el('examQuestionsList');
+    if (questionsList) {
+      if (questions.length === 0) {
+        questionsList.innerHTML = `<p style="color: #71717a; font-size: 0.9rem; margin: 0;">No questions added to this set yet.</p>`;
+      } else {
+        questionsList.innerHTML = questions.map((q) => `
+          <div style="background: #ffffff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 16px; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div>
+              <div style="font-weight: bold; color: #18181b; font-size: 1rem;">Q${q.number} <span style="font-weight: 500; font-size: 0.85rem; color: #71717a; margin-left: 8px;">(${q.marks} marks)</span></div>
+              <div style="color: #3f3f46; margin-top: 6px; font-size: 0.95rem; white-space: pre-wrap;">${q.text}</div>
+            </div>
+            ${examStatus === 'draft' ? `
+              <div style="display: flex; gap: 8px; margin-left: 12px;">
+                <button class="secondary edit-question-btn" data-id="${q.id}" data-num="${q.number}" data-marks="${q.marks}" data-text="${encodeURIComponent(q.text)}" style="padding: 4px 8px; font-size: 0.8rem;">Edit</button>
+                <button class="secondary delete-question-btn" data-id="${q.id}" style="padding: 4px 8px; font-size: 0.8rem; border-color: #ef4444 !important; color: #ef4444 !important;">Delete</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('');
+
+        questionsList.querySelectorAll('.delete-question-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            if (confirm('Delete this question?')) {
+              try {
+                await api(`/api/faculty/questions/${btn.dataset.id}`, { method: 'DELETE' });
+                logEvent('Deleted question');
+                const examRes = await api(`/api/faculty/exams/${state.activeExamId}`);
+                state.papers = examRes.data.papers || [];
+                await loadPaperDetails(paperId, examStatus);
+                await loadExamDetails(state.activeExamId);
+              } catch (err) { alert(err.message); }
+            }
+          });
+        });
+
+        questionsList.querySelectorAll('.edit-question-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            el('qNumInput').value = btn.dataset.num;
+            el('qMarksInput').value = btn.dataset.marks;
+            el('qTextInput').value = decodeURIComponent(btn.dataset.text);
+            el('qTextInput').focus();
+          });
+        });
+      }
+    }
+
+    // Toggle add question inputs based on exam status
+    if (examStatus !== 'draft') {
+      el('addQuestionBtn').disabled = true;
+      el('addQuestionBtn').textContent = 'Cannot edit published/archived exams';
+    } else {
+      el('addQuestionBtn').disabled = false;
+      el('addQuestionBtn').textContent = 'Add question';
+    }
+
+    // Populate students dropdown for assigning set
+    const studentsRes = await api(`/api/faculty/assignments/${state.activeAssignmentId}/students`);
+    const students = studentsRes.data || [];
+    const select = el('assignStudentSelect');
+    if (select) {
+      if (students.length === 0) {
+        select.innerHTML = `<option value="">No students in roster</option>`;
+      } else {
+        select.innerHTML = students.map((std) => `<option value="${std.roll_no}">${std.name} (${std.roll_no})</option>`).join('');
+      }
+    }
+  } catch (err) {
+    alert('Failed to load paper details: ' + err.message);
+  }
+};
+
+const loadAdminData = async () => {
+  if (!state.token) return;
+  try {
+    // 1. Load Faculty Accounts
+    const facRes = await api('/api/admin/faculty');
+    const facList = facRes.data || [];
+    const facTable = el('adminFacultyList');
+    if (facTable) {
+      facTable.innerHTML = facList.map((fac) => `
+        <tr style="border-bottom: 1px solid #e4e4e7;">
+          <td style="padding: 12px 12px; font-weight: 600; color: #18181b;">${fac.name}</td>
+          <td style="padding: 12px 12px; color: #52525b;">${fac.email}</td>
+          <td style="padding: 12px 12px; text-align: center;">
+            <button class="secondary delete-fac-btn" data-id="${fac.id}" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important; background: transparent; border: 1.5px solid #ef4444; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+
+      facTable.querySelectorAll('.delete-fac-btn').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          if (confirm('Delete this faculty login?')) {
+            try {
+              await api(`/api/admin/faculty/${e.target.dataset.id}`, { method: 'DELETE' });
+              logEvent('Deleted faculty login');
+              await loadAdminData();
+            } catch (err) { alert(err.message); }
+          }
+        });
+      });
+    }
+
+    const assignFacultySelect = el('assignFacultySelect');
+    if (assignFacultySelect) {
+      assignFacultySelect.innerHTML = facList.map((fac) => `<option value="${fac.id}">${fac.name} (${fac.email})</option>`).join('');
+    }
+
+    // 2. Load Subjects
+    const subRes = await api('/api/admin/subjects');
+    const subList = subRes.data || [];
+    const subTable = el('adminSubjectsList');
+    if (subTable) {
+      subTable.innerHTML = subList.map((sub) => `
+        <tr style="border-bottom: 1px solid #e4e4e7;">
+          <td style="padding: 12px 12px; font-weight: 600; color: #18181b;">${sub.code}</td>
+          <td style="padding: 12px 12px; color: #52525b;">${sub.name}</td>
+          <td style="padding: 12px 12px; text-align: center;">
+            <button class="secondary delete-sub-btn" data-id="${sub.id}" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important; background: transparent; border: 1.5px solid #ef4444; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+
+      subTable.querySelectorAll('.delete-sub-btn').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          if (confirm('Delete this subject?')) {
+            try {
+              await api(`/api/admin/subjects/${e.target.dataset.id}`, { method: 'DELETE' });
+              logEvent('Deleted subject');
+              await loadAdminData();
+            } catch (err) { alert(err.message); }
+          }
+        });
+      });
+    }
+
+    const assignSubjectSelect = el('assignSubjectSelect');
+    if (assignSubjectSelect) {
+      assignSubjectSelect.innerHTML = subList.map((sub) => `<option value="${sub.id}">${sub.code} - ${sub.name}</option>`).join('');
+    }
+
+    // 3. Load Teaching Assignments
+    const assignRes = await api('/api/admin/teaching-assignments');
+    const assignList = assignRes.data || [];
+    const assignTable = el('adminAssignmentsList');
+    if (assignTable) {
+      assignTable.innerHTML = assignList.map((item) => {
+        const fac = facList.find(f => f.id === item.faculty_id) || { name: item.faculty_id };
+        const sub = subList.find(s => s.id === item.subject_id) || { name: item.subject_id };
+        return `
+          <tr style="border-bottom: 1px solid #e4e4e7;">
+            <td style="padding: 12px 12px; font-weight: 600; color: #18181b;">${fac.name}</td>
+            <td style="padding: 12px 12px; color: #52525b;">${sub.name}</td>
+            <td style="padding: 12px 12px; color: #52525b;">Yr ${item.year} / Sem ${item.semester} / Sec ${item.section}</td>
+            <td style="padding: 12px 12px; text-align: center;">
+              <button class="secondary delete-assign-btn" data-id="${item.id}" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important; background: transparent; border: 1.5px solid #ef4444; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">Delete</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      assignTable.querySelectorAll('.delete-assign-btn').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          if (confirm('Delete this teaching assignment?')) {
+            try {
+              await api(`/api/admin/teaching-assignments/${e.target.dataset.id}`, { method: 'DELETE' });
+              logEvent('Deleted teaching assignment');
+              await loadAdminData();
+            } catch (err) { alert(err.message); }
+          }
+        });
+      });
+    }
+
+  } catch (err) {
+    logEvent(`Failed to load admin data: ${err.message}`);
+  }
 };
 
 const connectWebSocket = () => {
@@ -508,14 +944,8 @@ loginForm.addEventListener('submit', async (event) => {
   state.serverUrl = serverUrl.replace(/\/$/, '');
   localStorage.setItem('securemlexam_server_url', state.serverUrl);
 
-  if (mode === 'student') {
-    payload.name        = formData.get('name');
-    payload.roll_number = formData.get('rollNumber');
-    payload.exam_id     = formData.get('examId');
-  } else {
-    payload.email    = formData.get('email');
-    payload.password = formData.get('password');
-  }
+  const email = formData.get('email');
+  const password = formData.get('password');
 
   const showLoginError = (msg) => {
     // Reset button so student can try again
@@ -531,18 +961,62 @@ loginForm.addEventListener('submit', async (event) => {
   };
 
   try {
-    const data = await api('/api/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    let data;
+    if (mode === 'student') {
+      const rollNumber = formData.get('rollNumber');
+      const name = formData.get('name');
+
+      // ── Demo Mode ──────────────────────────────────────────────────────────
+      // Roll number "DEMO" skips server assignment check and all security locks.
+      const isDemo = rollNumber.trim().toUpperCase() === DEMO_ROLL;
+
+      if (!isDemo) {
+        const res = await api(`/api/assignments?roll_no=${encodeURIComponent(rollNumber)}`);
+        if (!res.data || res.data.length === 0) {
+          throw new Error('No assignments found for this roll number');
+        }
+      }
+
+      data = {
+        token: 'student_session',
+        role: 'student',
+        name: name || (isDemo ? 'Demo Tester' : 'Student'),
+        rollNumber: rollNumber,
+        demoMode: isDemo
+      };
+    } else if (mode === 'faculty') {
+      const res = await api('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      data = {
+        token: 'faculty_session',
+        role: 'faculty',
+        name: res.data.name || 'Faculty',
+        rollNumber: ''
+      };
+    } else if (mode === 'admin') {
+      const res = await api('/api/admin/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      data = {
+        token: 'admin_session',
+        role: 'admin',
+        name: 'Administrator',
+        rollNumber: ''
+      };
+    }
 
     // Success — clear error, store session
     errorBox.classList.add('hidden');
     state.token = data.token;
     state.role  = data.role;
     state.name  = data.name || '';
-    state.rollNumber = payload.roll_number || '';
+    state.rollNumber = data.rollNumber || '';
+    state.demoMode = !!data.demoMode;
     localStorage.setItem('securemlexam_token', state.token);
     localStorage.setItem('securemlexam_role',  state.role);
     localStorage.setItem('securemlexam_name',  state.name);
@@ -551,14 +1025,26 @@ loginForm.addEventListener('submit', async (event) => {
     setMode(state.role);
     updateGridLayout();
     connectWebSocket();
-    logEvent(`Signed in as ${state.name || state.role}`);
+    logEvent(`Signed in as ${state.name || state.role}${state.demoMode ? ' [DEMO MODE]' : ''}`);
+
+    if (state.demoMode) {
+      // Show a visible banner so tester knows restrictions are off
+      const banner = document.createElement('div');
+      banner.id = 'demoBanner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99998;background:#f59e0b;color:#000;text-align:center;font-weight:700;font-size:0.9rem;padding:6px;letter-spacing:0.05em;';
+      banner.textContent = '⚠️  DEMO MODE — Security restrictions disabled. For testing only.';
+      document.body.prepend(banner);
+    }
 
     if (state.role === 'student') {
-      if (window.electronAPI) window.electronAPI.requestFullscreen(true);
+      if (window.electronAPI && !state.demoMode) window.electronAPI.requestFullscreen(true);
       await loadStudentExam();
-    } else {
+    } else if (state.role === 'faculty') {
       if (window.electronAPI) window.electronAPI.requestFullscreen(false);
       await loadFacultyData();
+    } else if (state.role === 'admin') {
+      if (window.electronAPI) window.electronAPI.requestFullscreen(false);
+      await loadAdminData();
     }
 
     // Restore button for any future re-login
@@ -583,6 +1069,8 @@ el('refreshBtn').addEventListener('click', async () => {
       await loadStudentExam();
     } else if (state.role === 'faculty') {
       await loadFacultyData();
+    } else if (state.role === 'admin') {
+      await loadAdminData();
     }
   } catch (error) {
     logEvent(error.message);
@@ -603,13 +1091,13 @@ el('submitBtn').addEventListener('click', async () => {
   btn.style.opacity = '0.7';
 
   try {
-    const data = await api('/api/v1/student/submit', {
+    const data = await api('/api/submissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        exam_id: state.examId,
-        question_id: state.questionId || '',
-        code: codeEditor.value,
+        assignment_id: state.questionId || '',
+        student_roll_no: state.rollNumber,
+        response: codeEditor.value,
       }),
     });
     logEvent(data.status || 'submitted');
@@ -735,171 +1223,95 @@ el('runCodeBtn').addEventListener('click', () => {
   const term = el('terminalOutput');
   const runBtn = el('runCodeBtn');
   const lang = el('languageSelect') ? el('languageSelect').value : 'python';
-  
+
+  // ── Stop running process ────────────────────────────────────────────────
+  if (state.runWs) {
+    if (window.electronAPI) {
+      window.electronAPI.stopCode();
+    }
+    state.runWs = null; // flag cleared; code-exit event will clean up UI
+    return;
+  }
+
+  if (!window.electronAPI) {
+    term.style.color = '#f87171';
+    term.textContent = '[Error]: Code execution is only available in the desktop app.';
+    return;
+  }
+
+  if (!code.trim()) {
+    term.style.color = '#f87171';
+    term.textContent = '[Error]: Please write some code first.';
+    return;
+  }
+
+  // ── Start run ──────────────────────────────────────────────────────────
+  state.runWs = true; // use as "running" flag
+
+  term.textContent = `Running ${lang.toUpperCase()} code...\n`;
+  term.style.color = '#a3e635';
+  runBtn.textContent = 'Stop';
+  runBtn.style.background = '#ef4444';
+  runBtn.style.color = '#ffffff';
+  runBtn.disabled = false;
+
   const cleanupRunState = () => {
-    el('terminalInputRow').classList.add('hidden');
     runBtn.disabled = false;
-    runBtn.textContent = "Run Code";
+    runBtn.textContent = 'Run Code';
     runBtn.style.removeProperty('background');
     runBtn.style.removeProperty('color');
     state.runWs = null;
-    
-    // Save draft after execution finishes
+    window.electronAPI.removeCodeListeners();
+
+    // Save draft after execution
     const q = state.questions[state.activeQuestionIndex];
     if (q) {
       state.drafts[q.id] = {
         code: el('codeEditor').value,
-        language: el('languageSelect').value,
+        language: el('languageSelect') ? el('languageSelect').value : 'python',
         terminal: term.textContent,
         terminalColor: term.style.color,
       };
     }
   };
 
-  if (state.runWs) {
-    term.textContent += "\n[System Info]: Program stopped by user.";
-    term.style.color = "#f87171";
-    try { state.runWs.close(); } catch(e) {}
-    state.runWs = null;
-    cleanupRunState();
-    return;
-  }
+  // Remove any leftover listeners from previous run
+  window.electronAPI.removeCodeListeners();
 
-  // Hide generated outputs initially
-  if (el('terminalOutputs')) {
-    el('terminalOutputs').classList.add('hidden');
-    el('outputsContainer').innerHTML = '';
-  }
-
-  term.textContent = `Compiling & Executing ${lang.toUpperCase()} code... (Establish stream)\n`;
-  term.style.color = "#a3e635"; // yellow-green during run
-  runBtn.textContent = "Stop";
-  runBtn.style.background = "#ef4444";
-  runBtn.style.color = "#ffffff";
-  runBtn.disabled = false;
-
-  // Hide input row initially
-  el('terminalInputRow').classList.add('hidden');
-  el('terminalInput').value = '';
-
-  const wsUrlBase = state.serverUrl.replace(/^http/, 'ws');
-  const wsUrl = `${wsUrlBase}/api/v1/student/run/ws?token=${encodeURIComponent(state.token)}`;
-  
-  const socket = new WebSocket(wsUrl);
-  state.runWs = socket;
-
-  socket.onopen = () => {
-    term.textContent = "";
-    socket.send(JSON.stringify({
-      code: code,
-      language: lang,
-      question_index: state.activeQuestionIndex
-    }));
-    el('terminalInputRow').classList.remove('hidden');
-    el('terminalInput').focus();
-  };
-
-  socket.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === "formatted_code" && msg.formatted_code) {
-        el('codeEditor').value = msg.formatted_code;
-      } else if (msg.type === "output") {
-        term.textContent += msg.data;
-        el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-      } else if (msg.type === "exit") {
-        if (msg.data) {
-          term.style.color = "#f87171"; // error color
-          term.textContent += "\n" + msg.data;
-        } else {
-          term.style.color = "#10b981"; // success color
-          if (!term.textContent) {
-            term.textContent = "Program finished with no output.";
-          }
-        }
-        
-        // Render any output files returned by the backend
-        if (msg.files && msg.files.length > 0) {
-          el('terminalOutputs').classList.remove('hidden');
-          msg.files.forEach(file => {
-            const container = document.createElement('div');
-            container.style.marginBottom = '16px';
-            container.style.border = '1px solid rgba(255, 255, 255, 0.1)';
-            container.style.borderRadius = '8px';
-            container.style.padding = '12px';
-            container.style.background = '#1e1b4b'; // dark blue-indigo contrast
-            
-            const title = document.createElement('div');
-            title.style.color = '#a3e635';
-            title.style.fontWeight = 'bold';
-            title.style.marginBottom = '8px';
-            title.style.fontSize = '0.9rem';
-            
-            if (file.content_type.startsWith('image/')) {
-              title.textContent = `📊 Output Image: ${file.name}`;
-              const img = document.createElement('img');
-              img.src = `data:${file.content_type};base64,${file.data_base64}`;
-              img.style.maxWidth = '100%';
-              img.style.maxHeight = '300px';
-              img.style.borderRadius = '6px';
-              container.appendChild(title);
-              container.appendChild(img);
-            } else if (file.content_type === 'application/pdf') {
-              title.textContent = `📄 Output PDF Plot: ${file.name}`;
-              const iframe = document.createElement('iframe');
-              iframe.src = `data:${file.content_type};base64,${file.data_base64}`;
-              iframe.style.width = '100%';
-              iframe.style.height = '350px';
-              iframe.style.border = 'none';
-              iframe.style.borderRadius = '6px';
-              iframe.style.background = '#ffffff';
-              container.appendChild(title);
-              container.appendChild(iframe);
-            } else if (file.content_type.startsWith('text/')) {
-              title.textContent = `🗃 Output File: ${file.name}`;
-              const pre = document.createElement('pre');
-              pre.textContent = atob(file.data_base64);
-              pre.style.background = '#0c0a09';
-              pre.style.color = '#e4e4e7';
-              pre.style.padding = '8px 12px';
-              pre.style.borderRadius = '6px';
-              pre.style.overflowX = 'auto';
-              pre.style.fontSize = '0.85rem';
-              pre.style.margin = '0';
-              container.appendChild(title);
-              container.appendChild(pre);
-            } else {
-              title.textContent = `💾 File Generated: ${file.name}`;
-              const p = document.createElement('p');
-              p.textContent = `Saved to your local Desktop folder.`;
-              p.style.color = '#e4e4e7';
-              p.style.fontSize = '0.85rem';
-              p.style.margin = '0';
-              container.appendChild(title);
-              container.appendChild(p);
-            }
-            el('outputsContainer').appendChild(container);
-          });
-        }
-        
-        el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-        cleanupRunState();
-      }
-    } catch (err) {
-      console.error("Failed to parse run WS message:", err);
+  window.electronAPI.onCodeOutput((data) => {
+    term.textContent += data.data;
+    el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+    if (data.stream === 'stderr') {
+      term.style.color = '#f87171';
     }
-  };
+  });
 
-  socket.onerror = (err) => {
-    term.style.color = "#f87171";
-    term.textContent += `\n[Stream Error]: Connection to runner closed unexpectedly.`;
+  window.electronAPI.onCodeExit((data) => {
+    if (data.error) {
+      term.style.color = '#f87171';
+      term.textContent += '\n' + data.error;
+    } else if (data.exitCode === 0) {
+      term.style.color = '#10b981';
+      if (!term.textContent.trim()) {
+        term.textContent = 'Program finished with no output.';
+      }
+    } else if (data.exitCode === -1) {
+      term.style.color = '#f87171';
+      term.textContent += '\n[Stopped by user]';
+    } else {
+      // stderr already streamed; just mark as error color
+      if (!term.style.color || term.style.color === 'rgb(163, 230, 53)') {
+        term.style.color = '#f87171';
+      }
+    }
+    el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
     cleanupRunState();
-  };
+  });
 
-  socket.onclose = () => {
-    cleanupRunState();
-  };
+  window.electronAPI.runCode(code, lang);
 });
+
+
 
 el('saveLocalBtn').addEventListener('click', async () => {
   const btn = el('saveLocalBtn');
@@ -934,51 +1346,57 @@ el('saveLocalBtn').addEventListener('click', async () => {
   }
 });
 
-el('clearTerminalBtn').addEventListener('click', () => {
-  el('terminalOutput').textContent = "Terminal ready. Write Python code and click Run Code.";
-  el('terminalOutput').style.color = "#10b981";
-});
+if (el('clearTerminalBtn')) {
+  el('clearTerminalBtn').addEventListener('click', () => {
+    el('terminalOutput').textContent = "Terminal ready. Write Python code and click Run Code.";
+    el('terminalOutput').style.color = "#10b981";
+  });
+}
 
-el('assignBtn').addEventListener('click', async () => {
-  try {
-    const rollNumber = el('assignRoll').value.trim();
-    const questionNumber = Number(el('assignQuestion').value.trim());
-    const data = await api('/api/v1/faculty/exams/exam-1/chits', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roll_number: rollNumber, question_number: questionNumber }),
-    });
-    logEvent(`Assigned question ${questionNumber} to ${rollNumber}`);
-    await loadFacultyData();
-    return data;
-  } catch (error) {
-    logEvent(error.message);
-    alert(error.message);
-  }
-});
-
-el('importRosterBtn').addEventListener('click', async () => {
-  try {
-    const fileInput = el('rosterFile');
-    if (!fileInput.files.length) {
-      throw new Error('Choose an Excel file first');
+if (el('assignBtn')) {
+  el('assignBtn').addEventListener('click', async () => {
+    try {
+      const rollNumber = el('assignRoll').value.trim();
+      const questionNumber = Number(el('assignQuestion').value.trim());
+      const data = await api('/api/v1/faculty/exams/exam-1/chits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roll_number: rollNumber, question_number: questionNumber }),
+      });
+      logEvent(`Assigned question ${questionNumber} to ${rollNumber}`);
+      await loadFacultyData();
+      return data;
+    } catch (error) {
+      logEvent(error.message);
+      alert(error.message);
     }
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    const response = await fetch(`${state.serverUrl}/api/v1/faculty/students/import`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${state.token}` },
-      body: formData,
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Import failed');
-    logEvent(`Imported ${data.imported} students`);
-    await loadFacultyData();
-  } catch (error) {
-    logEvent(error.message);
-    alert(error.message);
-  }
-});
+  });
+}
+
+if (el('importRosterBtn')) {
+  el('importRosterBtn').addEventListener('click', async () => {
+    try {
+      const fileInput = el('rosterFile');
+      if (!fileInput.files.length) {
+        throw new Error('Choose an Excel file first');
+      }
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      const response = await fetch(`${state.serverUrl}/api/v1/faculty/students/import`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${state.token}` },
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Import failed');
+      logEvent(`Imported ${data.imported} students`);
+      await loadFacultyData();
+    } catch (error) {
+      logEvent(error.message);
+      alert(error.message);
+    }
+  });
+}
 
 const reportViolation = async (kind, details) => {
   try {
@@ -1029,11 +1447,11 @@ const triggerViolationShutdown = async (kind, details) => {
 };
 
 // Disable context menu
-window.addEventListener('contextmenu', (e) => e.preventDefault());
+window.addEventListener('contextmenu', (e) => { if (state.role === 'student' && !state.demoMode) e.preventDefault(); });
 
 // Block Copy, Cut, and Paste actions silently (no exam termination, just prevention)
 const blockClipboard = (e) => {
-  if (state.role === 'student' && state.token) {
+  if (state.role === 'student' && state.token && !state.demoMode) {
     e.preventDefault();
     logEvent(`⚠️ Clipboard ${e.type} blocked.`);
   }
@@ -1108,13 +1526,18 @@ const configureEnvironmentModes = () => {
     const eyebrow = document.querySelector('.hero .eyebrow');
     if (eyebrow) eyebrow.textContent = "Secure Exam Client";
   } else {
-    // ── Web Browser Mode (Faculty Server Portal) ─────────────────────────────
-    state.role = 'faculty';
-    state.mode = 'faculty';
-    setMode('faculty');
+    // ── Web Browser Mode (Faculty & Admin Portal) ─────────────────────────────
+    const storedRole = localStorage.getItem('securemlexam_role');
+    state.role = (storedRole === 'admin' || storedRole === 'faculty') ? storedRole : 'faculty';
+    state.mode = state.role;
+    setMode(state.role);
 
     const segmented = document.querySelector('.segmented');
-    if (segmented) segmented.classList.add('hidden');
+    if (segmented) {
+      segmented.classList.remove('hidden');
+      const studentBtn = segmented.querySelector('[data-mode="student"]');
+      if (studentBtn) studentBtn.style.display = 'none';
+    }
 
     const debugActions = el('debugActionsRow');
     if (debugActions) debugActions.classList.add('hidden');
@@ -1123,19 +1546,27 @@ const configureEnvironmentModes = () => {
     if (tokenBox) tokenBox.classList.add('hidden');
 
     const heroText = document.querySelector('.hero h1');
-    if (heroText) heroText.textContent = "Secure Faculty Control Center";
+    if (heroText) heroText.textContent = "Secure Admin & Faculty Portal";
 
     const heroDesc = document.querySelector('.hero .lede');
-    if (heroDesc) heroDesc.textContent = "Upload student rosters, seed questions, and monitor exam integrity.";
+    if (heroDesc) heroDesc.textContent = "Create faculty accounts, import student rosters, and monitor exam integrity.";
 
     const eyebrow = document.querySelector('.hero .eyebrow');
-    if (eyebrow) eyebrow.textContent = "Faculty Admin Portal";
+    if (eyebrow) eyebrow.textContent = "System Administration Panel";
   }
 };
 
 
 
-el('signOutBtn').addEventListener('click', () => {
+el('signOutBtn').addEventListener('click', async () => {
+  try {
+    if (state.role === 'admin') {
+      await api('/api/admin/auth/logout', { method: 'POST' });
+    } else if (state.role === 'faculty') {
+      await api('/api/auth/logout', { method: 'POST' });
+    }
+  } catch (_) {}
+
   state.token = '';
   state.role = window.electronAPI ? 'student' : 'faculty';
   state.name = '';
@@ -1218,7 +1649,281 @@ window.addEventListener('load', async () => {
       }
     });
   }
-  
+
+  // Admin dynamic tab switching
+  document.querySelectorAll('.admin-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.add('hidden'));
+      btn.classList.add('active');
+      const targetId = btn.dataset.tab;
+      el(targetId).classList.remove('hidden');
+    });
+  });
+
+  // Faculty dynamic tab switching
+  document.querySelectorAll('.faculty-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.faculty-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.faculty-tab-content').forEach(c => c.classList.add('hidden'));
+      btn.classList.add('active');
+      const targetId = btn.dataset.tab;
+      el(targetId).classList.remove('hidden');
+    });
+  });
+
+  // Admin: Create Faculty Account
+  if (el('createFacultyBtn')) {
+    el('createFacultyBtn').addEventListener('click', async () => {
+      const name = el('facNameInput').value.trim();
+      const email = el('facEmailInput').value.trim();
+      const password = el('facPasswordInput').value.trim();
+
+      if (!name || !email || !password) {
+        alert('Please fill Name, Email, and Password');
+        return;
+      }
+
+      try {
+        await api('/api/admin/faculty', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password })
+        });
+        logEvent(`Created faculty account: ${email}`);
+        
+        el('facNameInput').value = '';
+        el('facEmailInput').value = '';
+        el('facPasswordInput').value = '';
+
+        await loadAdminData();
+      } catch (err) {
+        alert('Failed to create faculty: ' + err.message);
+      }
+    });
+  }
+
+  // Admin: Create Subject
+  if (el('createSubjectBtn')) {
+    el('createSubjectBtn').addEventListener('click', async () => {
+      const code = el('subCodeInput').value.trim();
+      const name = el('subNameInput').value.trim();
+
+      if (!code || !name) {
+        alert('Please fill Subject Code and Name');
+        return;
+      }
+
+      try {
+        await api('/api/admin/subjects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, name })
+        });
+        logEvent(`Created subject: ${code}`);
+
+        el('subCodeInput').value = '';
+        el('subNameInput').value = '';
+
+        await loadAdminData();
+      } catch (err) {
+        alert('Failed to create subject: ' + err.message);
+      }
+    });
+  }
+
+  // Admin: Create Teaching Assignment
+  if (el('createAssignmentBtn')) {
+    el('createAssignmentBtn').addEventListener('click', async () => {
+      const faculty_id = el('assignFacultySelect').value;
+      const subject_id = el('assignSubjectSelect').value;
+      const year = el('assignYearInput').value.trim();
+      const semester = el('assignSemesterInput').value.trim();
+      const section = el('assignSectionInput').value.trim();
+
+      if (!faculty_id || !subject_id || !year || !semester || !section) {
+        alert('Please fill all assignment fields');
+        return;
+      }
+
+      try {
+        await api('/api/admin/teaching-assignments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ faculty_id, subject_id, year, semester, section })
+        });
+        logEvent('Created teaching assignment');
+
+        el('assignYearInput').value = '';
+        el('assignSemesterInput').value = '';
+        el('assignSectionInput').value = '';
+
+        await loadAdminData();
+      } catch (err) {
+        alert('Failed to create assignment: ' + err.message);
+      }
+    });
+  }
+
+  // Admin: Import Student Roster
+  if (el('adminImportRosterBtn')) {
+    el('adminImportRosterBtn').addEventListener('click', async () => {
+      const year = el('rosterYearInput').value.trim();
+      const semester = el('rosterSemesterInput').value.trim();
+      const section = el('rosterSectionInput').value.trim();
+      const fileInput = el('adminRosterFile');
+
+      if (!year || !semester || !section || !fileInput.files.length) {
+        alert('Please specify Year, Semester, Section, and select an Excel/CSV file.');
+        return;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('year', year);
+        formData.append('semester', semester);
+        formData.append('section', section);
+
+        const response = await fetch(`${state.serverUrl}/api/admin/students/upload-excel`, {
+          method: 'POST',
+          credentials: 'include',
+          body: formData
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Import failed');
+
+        const responseData = data.data || {};
+        const count = responseData.students_count || 0;
+        logEvent(`Successfully uploaded student batch: ${count} students imported`);
+        alert(`Successfully imported ${count} students.`);
+
+        el('rosterYearInput').value = '';
+        el('rosterSemesterInput').value = '';
+        el('rosterSectionInput').value = '';
+        fileInput.value = '';
+      } catch (error) {
+        alert('Roster upload failed: ' + error.message);
+      }
+    });
+  }
+
+  // Faculty: Create Exam Draft
+  if (el('createExamBtn')) {
+    el('createExamBtn').addEventListener('click', async () => {
+      const title = el('examTitleInput').value.trim();
+
+      if (!state.activeAssignmentId || !title) {
+        alert('Please select an assignment and enter exam title');
+        return;
+      }
+
+      try {
+        await api('/api/faculty/exams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ faculty_assignment_id: state.activeAssignmentId, title })
+        });
+        logEvent(`Exam draft created: ${title}`);
+        el('examTitleInput').value = '';
+        await loadExamsForAssignment(state.activeAssignmentId);
+      } catch (err) {
+        alert('Failed to create exam draft: ' + err.message);
+      }
+    });
+  }
+
+  // Faculty: Close Exam Panel
+  if (el('closeExamBtn')) {
+    el('closeExamBtn').addEventListener('click', () => {
+      el('examDetailsSection').classList.add('hidden');
+      el('selectedSetSection').classList.add('hidden');
+    });
+  }
+
+  // Faculty: Create New Set (Paper)
+  if (el('createNewSetBtn')) {
+    el('createNewSetBtn').addEventListener('click', async () => {
+      const title = el('newSetTitleInput').value.trim();
+      if (!title) {
+        alert('Please enter set title');
+        return;
+      }
+      try {
+        await api(`/api/faculty/exams/${state.activeExamId}/papers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title })
+        });
+        logEvent(`Created new set: ${title}`);
+        el('newSetTitleInput').value = '';
+        await loadExamDetails(state.activeExamId);
+      } catch (err) {
+        alert('Failed to create set: ' + err.message);
+      }
+    });
+  }
+
+  // Faculty: Save/Add Question
+  if (el('addQuestionBtn')) {
+    el('addQuestionBtn').addEventListener('click', async () => {
+      const number = Number(el('qNumInput').value);
+      const marks = Number(el('qMarksInput').value);
+      const text = el('qTextInput').value.trim();
+
+      if (!state.activePaperId) {
+        alert('Please select an exam and question-paper set first');
+        return;
+      }
+      if (!text) {
+        alert('Question text is required');
+        return;
+      }
+
+      try {
+        await api(`/api/faculty/papers/${state.activePaperId}/questions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            questions: [{ number, text, marks }]
+          })
+        });
+        logEvent(`Saved question ${number}`);
+        el('qNumInput').value = '';
+        el('qMarksInput').value = '';
+        el('qTextInput').value = '';
+        const res = await api(`/api/faculty/exams/${state.activeExamId}`);
+        const exam = res.data.exam;
+        await loadPaperDetails(state.activePaperId, exam.status);
+        await loadExamDetails(state.activeExamId);
+      } catch (err) {
+        alert('Failed to save question: ' + err.message);
+      }
+    });
+  }
+
+  // Faculty: Assign Paper Set to Student
+  if (el('assignSetToStudentBtn')) {
+    el('assignSetToStudentBtn').addEventListener('click', async () => {
+      const roll_no = el('assignStudentSelect').value;
+      if (!roll_no) {
+        alert('Please select a student');
+        return;
+      }
+      try {
+        await api(`/api/faculty/exams/${state.activeExamId}/assign-paper`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_roll_no: roll_no, paper_id: state.activePaperId })
+        });
+        logEvent(`Assigned paper set to student ${roll_no}`);
+        alert(`Successfully assigned set to student ${roll_no}.`);
+      } catch (err) {
+        alert('Failed to assign set: ' + err.message);
+      }
+    });
+  }
+
   if (loginForm.serverUrl) {
     loginForm.serverUrl.value = state.serverUrl;
   }
@@ -1231,11 +1936,16 @@ window.addEventListener('load', async () => {
         window.electronAPI.requestFullscreen(true);
       }
       loadStudentExam().catch((error) => logEvent(error.message));
-    } else {
+    } else if (state.role === 'faculty') {
       if (window.electronAPI) {
         window.electronAPI.requestFullscreen(false);
       }
       loadFacultyData().catch((error) => logEvent(error.message));
+    } else if (state.role === 'admin') {
+      if (window.electronAPI) {
+        window.electronAPI.requestFullscreen(false);
+      }
+      loadAdminData().catch((error) => logEvent(error.message));
     }
   }
 });
