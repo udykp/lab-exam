@@ -456,7 +456,7 @@ function spawnAndStream(event, cmd, args, opts = {}) {
   });
 }
 
-ipcMain.on('run-code', async (event, { code, language }) => {
+ipcMain.on('run-code', async (event, { code, language, attachments }) => {
   // Kill any previous run
   if (runningProcess) {
     try { runningProcess.kill('SIGKILL'); } catch (_) {}
@@ -468,80 +468,94 @@ ipcMain.on('run-code', async (event, { code, language }) => {
   const ts = Date.now();
   let exitCode = 0;
 
+  // Create a dedicated directory for execution
+  const runDir = path.join(os.tmpdir(), `exam_run_${ts}`);
+  fs.mkdirSync(runDir, { recursive: true });
+
   try {
+    // Download non-image attachments (datasets like CSVs) to runDir so code can access them relatively
+    if (attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        const lower = att.filename.toLowerCase();
+        const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
+        if (isImage) continue; // Skip images - they don't need to be read by scripts
+
+        try {
+          sendOutput(event, `Downloading dataset: ${att.filename}...\n`);
+          const response = await fetch(att.url);
+          if (!response.ok) {
+            throw new Error(`HTTP status ${response.status}`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          fs.writeFileSync(path.join(runDir, att.filename), buffer);
+          sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
+        } catch (err) {
+          sendOutput(event, `Warning: failed to download data file ${att.filename}: ${err.message}\n`, 'stderr');
+        }
+      }
+    }
+
     // ── Python ──────────────────────────────────────────────────────────────
     if (lang.includes('python')) {
-      const pyFile = path.join(os.tmpdir(), `exam_${ts}.py`);
-      tempFiles.push(pyFile);
+      const pyFile = path.join(runDir, `solution.py`);
       fs.writeFileSync(pyFile, code, 'utf8');
-      exitCode = await spawnAndStream(event, 'python3', ['-u', pyFile]);
+      exitCode = await spawnAndStream(event, 'python3', ['-u', 'solution.py'], { cwd: runDir });
     }
 
     // ── Java ────────────────────────────────────────────────────────────────
     else if (lang.includes('java')) {
-      // Extract public class name (or default to ExamCode)
       const classMatch = code.match(/public\s+class\s+(\w+)/);
       const className = classMatch ? classMatch[1] : 'ExamCode';
-      const tmpDir = path.join(os.tmpdir(), `exam_java_${ts}`);
-      fs.mkdirSync(tmpDir, { recursive: true });
-      const javaFile = path.join(tmpDir, `${className}.java`);
-      tempFiles.push(tmpDir);
+      const javaFile = path.join(runDir, `${className}.java`);
       fs.writeFileSync(javaFile, code, 'utf8');
 
       sendOutput(event, `Compiling ${className}.java...\n`);
-      exitCode = await spawnAndStream(event, 'javac', [javaFile]);
+      exitCode = await spawnAndStream(event, 'javac', [`${className}.java`], { cwd: runDir });
       if (exitCode === 0) {
         sendOutput(event, `Running ${className}...\n`);
-        exitCode = await spawnAndStream(event, 'java', ['-cp', tmpDir, className]);
+        exitCode = await spawnAndStream(event, 'java', [className], { cwd: runDir });
       }
-      // cleanup dir
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
-      tempFiles = tempFiles.filter(f => f !== tmpDir);
     }
 
     // ── C ───────────────────────────────────────────────────────────────────
     else if (lang === 'c') {
-      const cFile = path.join(os.tmpdir(), `exam_${ts}.c`);
-      const binFile = path.join(os.tmpdir(), `exam_${ts}`);
-      tempFiles.push(cFile, binFile);
+      const cFile = path.join(runDir, `solution.c`);
+      const binFile = path.join(runDir, `solution.out`);
       fs.writeFileSync(cFile, code, 'utf8');
 
       sendOutput(event, 'Compiling C code...\n');
-      exitCode = await spawnAndStream(event, 'gcc', [cFile, '-o', binFile, '-lm']);
+      exitCode = await spawnAndStream(event, 'gcc', ['solution.c', '-o', 'solution.out', '-lm'], { cwd: runDir });
       if (exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', binFile]);
+        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
       }
     }
 
     // ── C++ ─────────────────────────────────────────────────────────────────
     else if (lang.includes('c++') || lang.includes('cpp')) {
-      const cppFile = path.join(os.tmpdir(), `exam_${ts}.cpp`);
-      const binFile = path.join(os.tmpdir(), `exam_${ts}`);
-      tempFiles.push(cppFile, binFile);
+      const cppFile = path.join(runDir, `solution.cpp`);
+      const binFile = path.join(runDir, `solution.out`);
       fs.writeFileSync(cppFile, code, 'utf8');
 
       sendOutput(event, 'Compiling C++ code...\n');
-      exitCode = await spawnAndStream(event, 'g++', [cppFile, '-o', binFile, '-lm', '-std=c++17']);
+      exitCode = await spawnAndStream(event, 'g++', ['solution.cpp', '-o', 'solution.out', '-lm', '-std=c++17'], { cwd: runDir });
       if (exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', binFile]);
+        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
       }
     }
 
     // ── R ───────────────────────────────────────────────────────────────────
     else if (lang === 'r' || lang.includes('rscript')) {
-      const rFile = path.join(os.tmpdir(), `exam_${ts}.R`);
-      tempFiles.push(rFile);
+      const rFile = path.join(runDir, `solution.R`);
       fs.writeFileSync(rFile, code, 'utf8');
-      exitCode = await spawnAndStream(event, 'Rscript', ['--vanilla', rFile]);
+      exitCode = await spawnAndStream(event, 'Rscript', ['--vanilla', 'solution.R'], { cwd: runDir });
     }
 
     // ── MySQL ────────────────────────────────────────────────────────────────
-    // Uses exam_user/exam_password on labexam DB — set up by setup_env.sh
     else if (lang.includes('mysql') || lang.includes('sql')) {
-      const sqlFile = path.join(os.tmpdir(), `exam_${ts}.sql`);
-      tempFiles.push(sqlFile);
+      const sqlFile = path.join(runDir, `solution.sql`);
       fs.writeFileSync(sqlFile, code, 'utf8');
       exitCode = await spawnAndStream(event, 'mysql', [
         '-u', 'exam_user',
@@ -549,7 +563,7 @@ ipcMain.on('run-code', async (event, { code, language }) => {
         'labexam',
         '--table',
         '-e', code
-      ]);
+      ], { cwd: runDir });
     }
 
     // ── Unknown ──────────────────────────────────────────────────────────────
@@ -562,7 +576,8 @@ ipcMain.on('run-code', async (event, { code, language }) => {
     exitCode = 1;
   }
 
-  cleanupTempFiles();
+  // Cleanup run directory recursively
+  try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
   event.sender.send('code-exit', { exitCode });
 });
 

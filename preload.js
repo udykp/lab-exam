@@ -20,8 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('save-local-file', folderName, fileName, content);
   },
   // Local code execution
-  runCode: (code, language) => {
-    ipcRenderer.send('run-code', { code, language });
+  runCode: (code, language, attachments = []) => {
+    ipcRenderer.send('run-code', { code, language, attachments });
   },
   stopCode: () => {
     ipcRenderer.send('stop-code');

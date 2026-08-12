@@ -167,7 +167,8 @@
               <span id="questionLabel" style="color: #71717a;">Question not loaded</span>
             </div>
             <h3 id="questionTitle" style="color: #18181b; font-size: 1.5rem; margin: 6px 0;">Loading...</h3>
-            <p id="questionPrompt" style="color: #52525b; line-height: 1.6;">Your question prompt will appear here.</p>
+            <p id="questionPrompt" style="color: #52525b; line-height: 1.6; margin-bottom: 0;">Your question prompt will appear here.</p>
+            <div id="studentAttachments" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;"></div>
           </div>
 
           <div id="editorArea" class="stack hidden">
@@ -295,6 +296,14 @@
                   <label style="flex: 1;"><span>Marks</span><input id="qMarksInput" type="number" placeholder="5" /></label>
                 </div>
                 <label style="margin-top: 8px;"><span>Question text</span><textarea id="qTextInput" placeholder="Write question prompt..." style="min-height: 80px;"></textarea></label>
+                
+                <!-- Drag and Drop Dropzone -->
+                <div id="dropzone" style="margin-top: 10px; border: 2px dashed #cbd5e1; border-radius: 10px; padding: 14px; text-align: center; color: #64748b; font-size: 0.85rem; cursor: pointer; transition: background 0.2s ease;">
+                  <span id="dropzoneText">Drag & drop files here, paste (Ctrl+V), or click to browse</span>
+                  <input type="file" id="qAttachmentInput" multiple accept=".png,.jpeg,.jpg,.gif,.webp,.pdf,.csv" style="display: none;" />
+                </div>
+                <div id="selectedFilesList" style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
+
                 <button id="addQuestionBtn" class="primary" type="button" style="margin-top: 12px; width: 100%;">Add question</button>
               </div>
 
@@ -313,16 +322,54 @@
                 </div>
               </div>
             </div>
+
+            <!-- Student Submissions & Progress -->
+            <div id="submissionsSection" style="margin-top: 1.5rem; border-top: 1px solid #e4e4e7; padding-top: 1.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h4 style="margin: 0; color: #18181b;">Student Submissions & Progress</h4>
+                <button id="refreshSubmissionsBtn" class="secondary" style="padding: 4px 10px; font-size: 0.8rem; height: 32px;">Refresh</button>
+              </div>
+              <div style="overflow-x: auto; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                  <thead>
+                    <tr style="border-bottom: 2px solid #e2e8f0; color: #475569;">
+                      <th style="padding: 8px 12px; font-weight: 600;">Student Name</th>
+                      <th style="padding: 8px 12px; font-weight: 600;">Roll Number</th>
+                      <th style="padding: 8px 12px; font-weight: 600;">Paper Set</th>
+                      <th style="padding: 8px 12px; font-weight: 600;">Assigned At</th>
+                      <th style="padding: 8px 12px; font-weight: 600;">Status</th>
+                      <th style="padding: 8px 12px; font-weight: 600;">Progress</th>
+                      <th style="padding: 8px 12px; font-weight: 600; text-align: center;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="examSubmissionsList" style="color: #334155;">
+                    <!-- populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
           </div>
         </div>
 
         <div id="adminView" class="view stack hidden">
-          <!-- Admin Tab Buttons -->
-          <div class="admin-tabs" style="display: flex; gap: 8px; border-bottom: 2px solid #e4e4e7; margin-bottom: 1.5rem; padding-bottom: 4px;">
-            <button class="secondary active admin-tab-btn" data-tab="adminFacultyTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Faculty Accounts</button>
-            <button class="secondary admin-tab-btn" data-tab="adminSubjectsTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Subjects</button>
-            <button class="secondary admin-tab-btn" data-tab="adminAssignmentsTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Teaching Assignments</button>
-            <button class="secondary admin-tab-btn" data-tab="adminRosterTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Import Students</button>
+          <!-- Admin Tab Buttons and DB Console Button -->
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e4e4e7; margin-bottom: 1.5rem; padding-bottom: 4px; flex-wrap: wrap; gap: 12px;">
+            <div class="admin-tabs" style="display: flex; gap: 8px;">
+              <button class="secondary active admin-tab-btn" data-tab="adminFacultyTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Faculty Accounts</button>
+              <button class="secondary admin-tab-btn" data-tab="adminSubjectsTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Subjects</button>
+              <button class="secondary admin-tab-btn" data-tab="adminAssignmentsTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Teaching Assignments</button>
+              <button class="secondary admin-tab-btn" data-tab="adminRosterTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Import Students</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 10px;">
+              <div style="font-size: 0.8rem; color: #166534; line-height: 1.3;">
+                <span style="font-weight: 700;">PocketBase DB Creds:</span><br/>
+                Email: <code style="font-weight: 700; color: #14532d;">admin@gmail.com</code> | Pass: <code style="font-weight: 700; color: #14532d;">crrao@1234</code>
+              </div>
+              <a href="http://localhost:8090/_/" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 0.85rem; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.2); transition: all 0.2s;">
+                ⚡ PocketBase Console
+              </a>
+            </div>
           </div>
 
           <!-- Tab 1: Faculty Accounts -->
@@ -344,6 +391,7 @@
                       <tr style="border-bottom: 2px solid #e4e4e7; color: #71717a;">
                         <th style="padding: 10px 12px;">Name</th>
                         <th style="padding: 10px 12px;">Email</th>
+                        <th style="padding: 10px 12px;">Status</th>
                         <th style="padding: 10px 12px; text-align: center;">Actions</th>
                       </tr>
                     </thead>
@@ -404,10 +452,22 @@
                     <!-- populated dynamically -->
                   </select>
                 </label>
-                <label><span>Year</span><input id="assignYearInput" placeholder="2026" /></label>
-                <label><span>Semester</span><input id="assignSemesterInput" placeholder="3" /></label>
-                <label><span>Section</span><input id="assignSectionInput" placeholder="A" /></label>
-                <button id="createAssignmentBtn" class="primary" type="button" style="margin-top: 10px;">Create Assignment</button>
+                <div id="assignBatchDropdownArea" style="margin-bottom: 10px;">
+                  <label>
+                    <span>Select Class (Batch)</span>
+                    <select id="assignBatchSelect" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; padding: 8px 12px; font-weight: 600; color: #18181b; width: 100%;">
+                      <!-- populated dynamically -->
+                    </select>
+                  </label>
+                  <a href="#" id="toggleManualAssignClassBtn" style="font-size: 0.8rem; color: #2563eb; text-decoration: none; display: block; margin-top: 6px; font-weight: 600;">Or enter class details manually</a>
+                </div>
+                <div id="assignManualClassArea" class="hidden" style="margin-bottom: 10px;">
+                  <label><span>Year</span><input id="assignYearInput" placeholder="2026" /></label>
+                  <label><span>Semester</span><input id="assignSemesterInput" placeholder="3" /></label>
+                  <label><span>Section</span><input id="assignSectionInput" placeholder="A" /></label>
+                  <a href="#" id="toggleDropdownAssignClassBtn" style="font-size: 0.8rem; color: #2563eb; text-decoration: none; display: block; margin-top: 6px; font-weight: 600;">Or select class from list</a>
+                </div>
+                <button id="createAssignmentBtn" class="primary" type="button" style="margin-top: 10px; width: 100%;">Create Assignment</button>
               </section>
               <section class="mini-card" style="flex: 2;">
                 <h3>Teaching Assignments</h3>
@@ -465,6 +525,34 @@
       </article>
     </section>
   </main>
+
+  <!-- Modal for viewing student responses -->
+  <div id="studentResponseModal" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.4); z-index: 10001; display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(4px);">
+    <div style="background: #ffffff; width: 100%; max-width: 800px; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15); display: flex; flex-direction: column; max-height: 85vh; border: 1px solid #e4e4e7;">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid #e4e4e7;">
+        <h3 id="responseModalTitle" style="margin: 0; color: #18181b; font-size: 1.25rem;">Student Answers</h3>
+        <button id="closeResponseModalBtn" style="background: transparent; border: 0; font-size: 1.5rem; cursor: pointer; color: #71717a; padding: 4px;">✕</button>
+      </div>
+      <div id="responseModalBody" style="padding: 24px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 20px;">
+        <!-- populated dynamically with questions and responses -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox Image Viewer for Students -->
+  <div id="imageLightboxModal" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.96); z-index: 100002; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(12px);">
+    <button id="closeLightboxBtn" style="position: absolute; top: 20px; right: 20px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 1.25rem; color: #ffffff; cursor: pointer; padding: 8px 18px; border-radius: 10px; font-weight: bold; transition: all 0.2s; outline: none;">Close (✕)</button>
+    
+    <div style="position: absolute; bottom: 30px; display: flex; gap: 12px; z-index: 100003; background: rgba(24, 24, 27, 0.85); padding: 8px 16px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.1);">
+      <button id="zoomOutBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">🔍- Out</button>
+      <button id="zoomResetBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">Reset</button>
+      <button id="zoomInBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">🔍+ In</button>
+    </div>
+
+    <div id="lightboxImageWrapper" style="overflow: auto; max-width: 90vw; max-height: 80vh; display: flex; align-items: center; justify-content: center; border-radius: 12px; cursor: grab; background: rgba(0, 0, 0, 0.2);">
+      <img id="lightboxImage" src="" alt="Zoomed View" style="transform: scale(1); transform-origin: center center; transition: transform 0.15s ease-out; max-width: 100%; max-height: 75vh; user-select: none; -webkit-user-drag: none;" />
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

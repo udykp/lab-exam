@@ -174,13 +174,15 @@ type questionPaperWithQuestions struct {
 }
 
 type question struct {
-	ID        string `json:"id"`
-	ExamID    string `json:"exam_id,omitempty"`
-	PaperID   string `json:"paper_id"`
-	Number    int    `json:"number"`
-	Text      string `json:"text"`
-	Marks     int    `json:"marks,omitempty"`
-	CreatedAt string `json:"created_at"`
+	ID             string   `json:"id"`
+	ExamID         string   `json:"exam_id,omitempty"`
+	PaperID        string   `json:"paper_id"`
+	Number         int      `json:"number"`
+	Text           string   `json:"text"`
+	Marks          int      `json:"marks,omitempty"`
+	CreatedAt      string   `json:"created_at"`
+	Attachments    []string `json:"attachments,omitempty"`
+	AttachmentURLs []string `json:"attachment_urls,omitempty"`
 }
 
 type assignment struct {
@@ -192,6 +194,19 @@ type assignment struct {
 	QuestionText  string `json:"question_text"`
 	AssignedAt    string `json:"assigned_at"`
 	Response      string `json:"response,omitempty"`
+	SubmittedAt   string `json:"submitted_at,omitempty"`
+	AttemptID     string `json:"attempt_id,omitempty"`
+}
+
+type attempt struct {
+	ID            string `json:"id"`
+	ExamID        string `json:"exam_id"`
+	PaperID       string `json:"paper_id"`
+	StudentRollNo string `json:"student_roll_no"`
+	StudentID     string `json:"student_id,omitempty"` // Alias to match guide
+	Status        string `json:"status"` // assigned | started | submitted
+	AssignedAt    string `json:"assigned_at"`
+	StartedAt     string `json:"started_at,omitempty"`
 	SubmittedAt   string `json:"submitted_at,omitempty"`
 }
 
@@ -261,6 +276,7 @@ func main() {
 		handleAdminRecordResource(w, r, client, "faculty_assignments")
 	})
 	mux.HandleFunc("/api/admin/students/upload-excel", func(w http.ResponseWriter, r *http.Request) { handleAdminStudentUpload(w, r, client) })
+	mux.HandleFunc("/api/admin/batches", func(w http.ResponseWriter, r *http.Request) { handleAdminBatches(w, r, client) })
 	// Faculty authoring now uses the authenticated /api/faculty routes below.
 	// The old generic authoring routes are deliberately not registered: they
 	// could otherwise bypass the ownership checks with the backend's database
@@ -275,6 +291,9 @@ func main() {
 			writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
 		}
 	})
+	mux.HandleFunc("/api/attempts/start", func(w http.ResponseWriter, r *http.Request) { handleAttemptsStart(w, r, client) })
+	mux.HandleFunc("/api/attempts/submit", func(w http.ResponseWriter, r *http.Request) { handleAttemptsSubmit(w, r, client) })
+	mux.HandleFunc("/api/media/questions/", func(w http.ResponseWriter, r *http.Request) { handleMediaQuestion(w, r, client) })
 	mux.HandleFunc("/api/submissions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
@@ -828,6 +847,22 @@ func handleFacultyExamResource(w http.ResponseWriter, r *http.Request, client *p
 		writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "exam archived", Data: examRecord})
 		return
 	}
+	if len(parts) == 2 && parts[1] == "clone" && r.Method == http.MethodPost {
+		var req struct {
+			OfferingID string `json:"offering_id"`
+			Title      string `json:"title"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "invalid request"})
+			return
+		}
+		handleCloneExam(w, facultyClient, examRecord, req.OfferingID, req.Title)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "submissions" && r.Method == http.MethodGet {
+		handleGetExamSubmissions(w, facultyClient, examRecord.ID)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "papers" && r.Method == http.MethodPost {
 		handleCreateQuestionPaper(w, r, facultyClient, examRecord.ID)
 		return
@@ -923,6 +958,97 @@ func handleFacultyPaperResource(w http.ResponseWriter, r *http.Request, client *
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "question paper not found"})
 		return
 	}
+
+	contentType := r.Header.Get("Content-Type")
+	if strings.Contains(contentType, "multipart/form-data") {
+		err := r.ParseMultipartForm(100 * 1024 * 1024)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "failed to parse multipart form"})
+			return
+		}
+		numStr := r.FormValue("number")
+		marksStr := r.FormValue("marks")
+		text := r.FormValue("text")
+
+		number, _ := strconv.Atoi(numStr)
+		marks, _ := strconv.Atoi(marksStr)
+
+		if text == "" || number <= 0 {
+			writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "number and text are required"})
+			return
+		}
+
+		qPayload := map[string]interface{}{
+			"exam_id":    paper.ExamID,
+			"paper_id":   paper.ID,
+			"number":     number,
+			"text":       text,
+			"marks":      marks,
+			"created_at": time.Now().UTC().Format(time.RFC3339),
+		}
+
+		var requestBody bytes.Buffer
+		writer := multipart.NewWriter(&requestBody)
+
+		for k, v := range qPayload {
+			_ = writer.WriteField(k, fmt.Sprintf("%v", v))
+		}
+
+		files := r.MultipartForm.File["attachments"]
+		for _, fHeader := range files {
+			file, err := fHeader.Open()
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+				return
+			}
+			defer file.Close()
+
+			part, err := writer.CreateFormFile("attachments", fHeader.Filename)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+				return
+			}
+
+			_, _ = io.Copy(part, file)
+		}
+
+		_ = writer.Close()
+
+		pbURL := fmt.Sprintf("%s/api/collections/questions/records", facultyClient.baseURL)
+		req, err := http.NewRequest(http.MethodPost, pbURL, &requestBody)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+			return
+		}
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		if facultyClient.token != "" {
+			req.Header.Set("Authorization", "Bearer "+facultyClient.token)
+		}
+
+		resp, err := facultyClient.httpClient.Do(req)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			writeJSON(w, resp.StatusCode, apiResponse{Success: false, Message: string(body)})
+			return
+		}
+
+		var created question
+		_ = json.NewDecoder(resp.Body).Decode(&created)
+
+		var paperInfo questionPaper
+		_ = facultyClient.getRecord("question_papers", paper.ID, &paperInfo)
+		_ = facultyClient.updateRecord("question_papers", paper.ID, map[string]interface{}{"question_count": paperInfo.QuestionCount + 1}, &paperInfo)
+
+		writeJSON(w, http.StatusCreated, apiResponse{Success: true, Message: "question created", Data: []question{created}})
+		return
+	}
+
 	var req struct {
 		Questions []examQuestionRequest `json:"questions"`
 	}
@@ -957,9 +1083,9 @@ func handleAssignPaper(w http.ResponseWriter, client *pocketBaseClient, examReco
 		return
 	}
 	var existing struct {
-		Items []assignment `json:"items"`
+		Items []attempt `json:"items"`
 	}
-	if err := client.listRecords("assignments", fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, examRecord.ID, req.StudentRollNo), &existing); err != nil {
+	if err := client.listRecords("attempts", fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, examRecord.ID, req.StudentRollNo), &existing); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
 		return
 	}
@@ -976,16 +1102,61 @@ func handleAssignPaper(w http.ResponseWriter, client *pocketBaseClient, examReco
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "the selected question paper has no questions"})
 		return
 	}
+
+	att := attempt{
+		ExamID:        examRecord.ID,
+		PaperID:       paper.ID,
+		StudentRollNo: req.StudentRollNo,
+		StudentID:     req.StudentRollNo,
+		Status:        "assigned",
+		AssignedAt:    time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := client.createRecord("attempts", map[string]interface{}{
+		"exam_id":         att.ExamID,
+		"paper_id":        att.PaperID,
+		"student_roll_no": att.StudentRollNo,
+		"status":          att.Status,
+		"assigned_at":     att.AssignedAt,
+	}, &att); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+
 	assignments := make([]assignment, 0, len(questions))
 	for _, q := range questions {
-		item := assignment{ExamID: examRecord.ID, PaperID: paper.ID, StudentRollNo: req.StudentRollNo, QuestionID: q.ID, QuestionText: q.Text, AssignedAt: time.Now().UTC().Format(time.RFC3339)}
-		if err := client.createRecord("assignments", map[string]interface{}{"exam_id": item.ExamID, "paper_id": item.PaperID, "student_roll_no": item.StudentRollNo, "question_id": item.QuestionID, "question_text": item.QuestionText, "assigned_at": item.AssignedAt}, &item); err != nil {
+		item := assignment{
+			ExamID:        examRecord.ID,
+			PaperID:       paper.ID,
+			StudentRollNo: req.StudentRollNo,
+			QuestionID:    q.ID,
+			QuestionText:  q.Text,
+			AssignedAt:    att.AssignedAt,
+			AttemptID:     att.ID,
+		}
+		if err := client.createRecord("assignments", map[string]interface{}{
+			"exam_id":         item.ExamID,
+			"paper_id":        item.PaperID,
+			"student_roll_no": item.StudentRollNo,
+			"question_id":     item.QuestionID,
+			"question_text":   item.QuestionText,
+			"assigned_at":     item.AssignedAt,
+			"attempt_id":      item.AttemptID,
+		}, &item); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
 			return
 		}
 		assignments = append(assignments, item)
 	}
-	writeJSON(w, http.StatusCreated, apiResponse{Success: true, Message: "question paper assigned", Data: map[string]interface{}{"paper_id": paper.ID, "assigned_questions": assignments}})
+
+	writeJSON(w, http.StatusCreated, apiResponse{
+		Success: true,
+		Message: "question paper assigned",
+		Data: map[string]interface{}{
+			"attempt":            att,
+			"paper_id":           paper.ID,
+			"assigned_questions": assignments,
+		},
+	})
 }
 
 func handleFacultyQuestionResource(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
@@ -993,11 +1164,12 @@ func handleFacultyQuestionResource(w http.ResponseWriter, r *http.Request, clien
 	if !ok {
 		return
 	}
-	questionID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/faculty/questions/"), "/")
-	if questionID == "" || strings.Contains(questionID, "/") {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/faculty/questions/"), "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "route not found"})
 		return
 	}
+	questionID := parts[0]
 	var q question
 	if err := facultyClient.getRecord("questions", questionID, &q); err != nil || q.PaperID == "" {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "question not found"})
@@ -1013,7 +1185,20 @@ func handleFacultyQuestionResource(w http.ResponseWriter, r *http.Request, clien
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "question not found"})
 		return
 	}
-	handleQuestionResource(w, r, facultyClient)
+
+	if len(parts) == 1 {
+		handleQuestionResource(w, r, facultyClient)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "attachments" {
+		handleFacultyQuestionAttachments(w, r, facultyClient, questionID)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "attachments" {
+		handleFacultyQuestionDeleteAttachment(w, r, facultyClient, questionID, parts[2])
+		return
+	}
+	writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "route not found"})
 }
 
 func (c *pocketBaseClient) healthCheck() error {
@@ -1724,14 +1909,107 @@ func handleGetAssignments(w http.ResponseWriter, r *http.Request, client *pocket
 		return
 	}
 
+	// 1. Fetch student info
+	var students struct {
+		Items []student `json:"items"`
+	}
+	_ = client.listRecords("students", fmt.Sprintf(`roll_no = %q`, rollNo), &students)
+	var stud student
+	if len(students.Items) > 0 {
+		stud = students.Items[0]
+	} else {
+		stud = student{RollNo: rollNo, Name: "Student"}
+	}
+
+	// 2. Fetch attempts
+	var attemptsRes struct {
+		Items []attempt `json:"items"`
+	}
+	_ = client.listRecords("attempts", fmt.Sprintf(`student_roll_no = %q`, rollNo), &attemptsRes)
+
+	type attemptQuestion struct {
+		ID             string   `json:"id"`
+		QuestionID     string   `json:"question_id"`
+		Number         int      `json:"number"`
+		QuestionText   string   `json:"question_text"`
+		Marks          int      `json:"marks"`
+		Response       string   `json:"response"`
+		AttachmentURLs []string `json:"attachment_urls"`
+	}
+
+	type attemptWithQuestions struct {
+		attempt
+		ExamTitle    string            `json:"exam_title"`
+		PaperTitle   string            `json:"paper_title"`
+		Locked       bool              `json:"locked"`
+		Questions    []attemptQuestion `json:"questions"`
+	}
+
+	attemptsList := make([]attemptWithQuestions, 0)
+
+	// Fetch all assignments to construct both structured attempts and legacy assignments list
 	var result struct {
 		Items []assignment `json:"items"`
 	}
-	if err := client.listRecords("assignments", fmt.Sprintf(`student_roll_no = %q`, rollNo), &result); err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
-		return
+	_ = client.listRecords("assignments", fmt.Sprintf(`student_roll_no = %q`, rollNo), &result)
+
+	// For each attempt, aggregate questions
+	for _, att := range attemptsRes.Items {
+		var ex exam
+		_ = client.getRecord("exams", att.ExamID, &ex)
+
+		var pap questionPaper
+		_ = client.getRecord("question_papers", att.PaperID, &pap)
+
+		questionsList := make([]attemptQuestion, 0)
+		for _, as := range result.Items {
+			if as.AttemptID == att.ID || (as.AttemptID == "" && as.ExamID == att.ExamID && as.PaperID == att.PaperID) {
+				var q question
+				_ = client.getRecord("questions", as.QuestionID, &q)
+
+				urls := make([]string, 0)
+				for _, filename := range q.Attachments {
+					urls = append(urls, fmt.Sprintf("/api/media/questions/%s/%s", q.ID, filename))
+				}
+
+				questionsList = append(questionsList, attemptQuestion{
+					ID:             as.ID,
+					QuestionID:     as.QuestionID,
+					Number:         q.Number,
+					QuestionText:   as.QuestionText,
+					Marks:          q.Marks,
+					Response:       as.Response,
+					AttachmentURLs: urls,
+				})
+			}
+		}
+
+		// Sort questions by number
+		for i := 0; i < len(questionsList); i++ {
+			for j := i + 1; j < len(questionsList); j++ {
+				if questionsList[i].Number > questionsList[j].Number {
+					questionsList[i], questionsList[j] = questionsList[j], questionsList[i]
+				}
+			}
+		}
+
+		att.StudentID = att.StudentRollNo
+		attemptsList = append(attemptsList, attemptWithQuestions{
+			attempt:    att,
+			ExamTitle:  ex.Title,
+			PaperTitle: pap.Title,
+			Locked:     att.Status == "submitted",
+			Questions:  questionsList,
+		})
 	}
-	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "assignments fetched", Data: result.Items})
+
+	dataResponse := map[string]interface{}{
+		"student":     stud,
+		"attempts":    attemptsList,
+		"assignments": result.Items,
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "assignments fetched", Data: dataResponse})
 }
 
 func handleSubmitResponse(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
@@ -1740,8 +2018,8 @@ func handleSubmitResponse(w http.ResponseWriter, r *http.Request, client *pocket
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "invalid request"})
 		return
 	}
-	if req.AssignmentID == "" || req.StudentRollNo == "" || strings.TrimSpace(req.Response) == "" {
-		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "assignment_id, student_roll_no and response are required"})
+	if req.AssignmentID == "" || req.StudentRollNo == "" {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "assignment_id and student_roll_no are required"})
 		return
 	}
 
@@ -1753,6 +2031,30 @@ func handleSubmitResponse(w http.ResponseWriter, r *http.Request, client *pocket
 	if existing.StudentRollNo != req.StudentRollNo {
 		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "student_roll_no does not match the assignment"})
 		return
+	}
+
+	var att attempt
+	if existing.AttemptID != "" {
+		_ = client.getRecord("attempts", existing.AttemptID, &att)
+	} else {
+		var attempts struct {
+			Items []attempt `json:"items"`
+		}
+		_ = client.listRecords("attempts", fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, existing.ExamID, existing.StudentRollNo), &attempts)
+		if len(attempts.Items) > 0 {
+			att = attempts.Items[0]
+		}
+	}
+
+	if att.ID != "" {
+		if att.Status == "submitted" {
+			writeJSON(w, http.StatusConflict, apiResponse{Success: false, Message: "exam already submitted and locked"})
+			return
+		}
+		if att.Status != "started" {
+			writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "exam has not been started yet"})
+			return
+		}
 	}
 
 	updated := map[string]interface{}{
@@ -1913,6 +2215,500 @@ func extractTextFromPDF(data []byte) string {
 		parts = append(parts, val)
 	}
 	return strings.Join(parts, "\n")
+}
+
+func handleAdminBatches(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
+	if !requireAdmin(w, r, client) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
+		return
+	}
+	var batches struct {
+		Items []studentBatch `json:"items"`
+	}
+	if err := client.listRecords("student_batches", "", &batches); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	type enrichedBatch struct {
+		studentBatch
+		StudentsCount int `json:"students_count"`
+	}
+	enriched := make([]enrichedBatch, 0, len(batches.Items))
+	for _, b := range batches.Items {
+		var students struct {
+			TotalItems int `json:"totalItems"`
+		}
+		path := "/api/collections/students/records?perPage=1&filter=" + url.QueryEscape(fmt.Sprintf(`batch_id = %q`, b.ID))
+		_ = client.doJSON(http.MethodGet, path, nil, &students)
+
+		enriched = append(enriched, enrichedBatch{
+			studentBatch:  b,
+			StudentsCount: students.TotalItems,
+		})
+	}
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "batches fetched", Data: enriched})
+}
+
+func handleAttemptsStart(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
+		return
+	}
+	var req struct {
+		StudentRollNo string `json:"student_roll_no"`
+		ExamID        string `json:"exam_id"`
+		AttemptID     string `json:"attempt_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "invalid request"})
+		return
+	}
+	req.StudentRollNo = strings.TrimSpace(req.StudentRollNo)
+	if req.StudentRollNo == "" {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "student_roll_no is required"})
+		return
+	}
+
+	var attempts struct {
+		Items []attempt `json:"items"`
+	}
+	filter := ""
+	if req.AttemptID != "" {
+		filter = fmt.Sprintf(`id = %q && student_roll_no = %q`, req.AttemptID, req.StudentRollNo)
+	} else if req.ExamID != "" {
+		filter = fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, req.ExamID, req.StudentRollNo)
+	} else {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "exam_id or attempt_id is required"})
+		return
+	}
+
+	if err := client.listRecords("attempts", filter, &attempts); err != nil || len(attempts.Items) == 0 {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "attempt not found"})
+		return
+	}
+
+	att := attempts.Items[0]
+	if att.Status == "submitted" {
+		writeJSON(w, http.StatusConflict, apiResponse{Success: false, Message: "exam already submitted"})
+		return
+	}
+
+	if att.Status == "assigned" {
+		att.Status = "started"
+		att.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := client.updateRecord("attempts", att.ID, map[string]interface{}{"status": att.Status, "started_at": att.StartedAt}, &att); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+			return
+		}
+	}
+
+	att.StudentID = att.StudentRollNo
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "attempt started", Data: att})
+}
+
+func handleAttemptsSubmit(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
+		return
+	}
+	var req struct {
+		StudentRollNo string `json:"student_roll_no"`
+		ExamID        string `json:"exam_id"`
+		AttemptID     string `json:"attempt_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "invalid request"})
+		return
+	}
+	req.StudentRollNo = strings.TrimSpace(req.StudentRollNo)
+	if req.StudentRollNo == "" {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "student_roll_no is required"})
+		return
+	}
+
+	var attempts struct {
+		Items []attempt `json:"items"`
+	}
+	filter := ""
+	if req.AttemptID != "" {
+		filter = fmt.Sprintf(`id = %q && student_roll_no = %q`, req.AttemptID, req.StudentRollNo)
+	} else if req.ExamID != "" {
+		filter = fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, req.ExamID, req.StudentRollNo)
+	} else {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "exam_id or attempt_id is required"})
+		return
+	}
+
+	if err := client.listRecords("attempts", filter, &attempts); err != nil || len(attempts.Items) == 0 {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "attempt not found"})
+		return
+	}
+
+	att := attempts.Items[0]
+	if att.Status == "submitted" {
+		writeJSON(w, http.StatusConflict, apiResponse{Success: false, Message: "exam already submitted"})
+		return
+	}
+	if att.Status != "started" {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "exam not started yet"})
+		return
+	}
+
+	att.Status = "submitted"
+	att.SubmittedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := client.updateRecord("attempts", att.ID, map[string]interface{}{"status": att.Status, "submitted_at": att.SubmittedAt}, &att); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	// Also mark all associated assignments as submitted
+	var assigns struct {
+		Items []assignment `json:"items"`
+	}
+	_ = client.listRecords("assignments", fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, att.ExamID, att.StudentRollNo), &assigns)
+	for _, as := range assigns.Items {
+		_ = client.updateRecord("assignments", as.ID, map[string]interface{}{"submitted_at": att.SubmittedAt}, &as)
+	}
+
+	att.StudentID = att.StudentRollNo
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "exam attempt submitted successfully", Data: att})
+}
+
+func handleMediaQuestion(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/media/questions/"), "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "file not found"})
+		return
+	}
+	questionID := parts[0]
+	filename := parts[1]
+
+	authorized := false
+	cookie, err := r.Cookie(facultySessionCookie)
+	if err == nil && cookie.Value != "" {
+		var auth struct {
+			Record faculty `json:"record"`
+		}
+		if err := client.withToken(cookie.Value).doJSON(http.MethodPost, "/api/collections/faculty/auth-refresh", nil, &auth); err == nil && auth.Record.ID != "" {
+			authorized = true
+		}
+	}
+
+	if !authorized {
+		rollNo := strings.TrimSpace(r.URL.Query().Get("roll_no"))
+		if rollNo != "" {
+			var assigns struct {
+				Items []assignment `json:"items"`
+			}
+			_ = client.listRecords("assignments", fmt.Sprintf(`student_roll_no = %q && question_id = %q`, rollNo, questionID), &assigns)
+			if len(assigns.Items) > 0 {
+				authorized = true
+			}
+		}
+	}
+
+	if !authorized {
+		writeJSON(w, http.StatusUnauthorized, apiResponse{Success: false, Message: "unauthorized"})
+		return
+	}
+
+	pbURL := fmt.Sprintf("%s/api/files/questions/%s/%s", client.baseURL, questionID, filename)
+	req, err := http.NewRequest(http.MethodGet, pbURL, nil)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+	if client.token != "" {
+		req.Header.Set("Authorization", "Bearer "+client.token)
+	}
+
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		writeJSON(w, resp.StatusCode, apiResponse{Success: false, Message: "failed to retrieve file from store"})
+		return
+	}
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func handleFacultyQuestionAttachments(w http.ResponseWriter, r *http.Request, client *pocketBaseClient, questionID string) {
+	facultyClient, _, ok := requireFaculty(w, r, client)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
+		return
+	}
+
+	err := r.ParseMultipartForm(100 * 1024 * 1024)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "failed to parse multipart form"})
+		return
+	}
+
+	files := r.MultipartForm.File["attachments"]
+	if len(files) == 0 {
+		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "no attachments found in request"})
+		return
+	}
+
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+
+	for _, fHeader := range files {
+		file, err := fHeader.Open()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "failed to read file: " + err.Error()})
+			return
+		}
+		defer file.Close()
+
+		part, err := writer.CreateFormFile("attachments", fHeader.Filename)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "failed to create multipart field: " + err.Error()})
+			return
+		}
+
+		_, err = io.Copy(part, file)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "failed to copy file bytes: " + err.Error()})
+			return
+		}
+	}
+
+	err = writer.Close()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "failed to close multipart writer"})
+		return
+	}
+
+	pbURL := fmt.Sprintf("%s/api/collections/questions/records/%s", facultyClient.baseURL, questionID)
+	req, err := http.NewRequest(http.MethodPatch, pbURL, &requestBody)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if facultyClient.token != "" {
+		req.Header.Set("Authorization", "Bearer "+facultyClient.token)
+	}
+
+	resp, err := facultyClient.httpClient.Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		writeJSON(w, resp.StatusCode, apiResponse{Success: false, Message: string(body)})
+		return
+	}
+
+	var updated question
+	_ = json.NewDecoder(resp.Body).Decode(&updated)
+
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "attachments uploaded", Data: updated})
+}
+
+func handleFacultyQuestionDeleteAttachment(w http.ResponseWriter, r *http.Request, client *pocketBaseClient, questionID string, filename string) {
+	facultyClient, _, ok := requireFaculty(w, r, client)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
+		return
+	}
+
+	payload := map[string]interface{}{
+		"attachments-": []string{filename},
+	}
+
+	var updated question
+	if err := facultyClient.updateRecord("questions", questionID, payload, &updated); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "attachment deleted", Data: updated})
+}
+
+func handleCloneExam(w http.ResponseWriter, client *pocketBaseClient, srcExam exam, targetOfferingID string, newTitle string) {
+	var targetOffering facultyAssignment
+	if err := client.getRecord("faculty_assignments", targetOfferingID, &targetOffering); err != nil {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "target offering not found"})
+		return
+	}
+
+	if targetOffering.FacultyID != srcExam.FacultyID {
+		writeJSON(w, http.StatusForbidden, apiResponse{Success: false, Message: "you do not teach the target offering"})
+		return
+	}
+
+	var sub subject
+	_ = client.getRecord("subjects", targetOffering.SubjectID, &sub)
+
+	title := newTitle
+	if title == "" {
+		title = srcExam.Title + " (Clone)"
+	}
+
+	clonedExam := exam{
+		Title:               title,
+		Year:                targetOffering.Year,
+		Semester:            targetOffering.Semester,
+		Section:             targetOffering.Section,
+		Subject:             sub.Name,
+		FacultyID:           srcExam.FacultyID,
+		FacultyAssignmentID: targetOffering.ID,
+		Status:              "draft",
+		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if err := client.createRecord("exams", map[string]interface{}{
+		"title":                 clonedExam.Title,
+		"year":                  clonedExam.Year,
+		"semester":              clonedExam.Semester,
+		"section":               clonedExam.Section,
+		"subject":               clonedExam.Subject,
+		"faculty_id":            clonedExam.FacultyID,
+		"faculty_assignment_id": clonedExam.FacultyAssignmentID,
+		"status":                clonedExam.Status,
+		"created_at":            clonedExam.CreatedAt,
+	}, &clonedExam); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+		return
+	}
+
+	var papers struct {
+		Items []questionPaper `json:"items"`
+	}
+	_ = client.listRecords("question_papers", fmt.Sprintf(`exam_id = %q`, srcExam.ID), &papers)
+
+	for _, p := range papers.Items {
+		clonedPaper := questionPaper{
+			ExamID:        clonedExam.ID,
+			Title:         p.Title,
+			UploadedAt:    time.Now().UTC().Format(time.RFC3339),
+			QuestionCount: p.QuestionCount,
+		}
+		if err := client.createRecord("question_papers", map[string]interface{}{
+			"exam_id":        clonedPaper.ExamID,
+			"title":          clonedPaper.Title,
+			"uploaded_at":    clonedPaper.UploadedAt,
+			"question_count": clonedPaper.QuestionCount,
+		}, &clonedPaper); err != nil {
+			continue
+		}
+
+		qs, _ := listQuestionsForPaper(client, p.ID)
+		for _, q := range qs {
+			clonedQuestion := question{
+				ExamID:      clonedExam.ID,
+				PaperID:     clonedPaper.ID,
+				Number:      q.Number,
+				Text:        q.Text,
+				Marks:       q.Marks,
+				CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+				Attachments: q.Attachments,
+			}
+			_ = client.createRecord("questions", map[string]interface{}{
+				"exam_id":     clonedQuestion.ExamID,
+				"paper_id":    clonedQuestion.PaperID,
+				"number":      clonedQuestion.Number,
+				"text":        clonedQuestion.Text,
+				"marks":       clonedQuestion.Marks,
+				"created_at":  clonedQuestion.CreatedAt,
+				"attachments": clonedQuestion.Attachments,
+			}, &clonedQuestion)
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, apiResponse{Success: true, Message: "exam cloned successfully", Data: clonedExam})
+}
+
+func handleGetExamSubmissions(w http.ResponseWriter, client *pocketBaseClient, examID string) {
+	var attempts struct {
+		Items []attempt `json:"items"`
+	}
+	_ = client.listRecords("attempts", fmt.Sprintf(`exam_id = %q`, examID), &attempts)
+
+	var assignmentsRes struct {
+		Items []assignment `json:"items"`
+	}
+	_ = client.listRecords("assignments", fmt.Sprintf(`exam_id = %q`, examID), &assignmentsRes)
+
+	assignMap := make(map[string][]assignment)
+	for _, as := range assignmentsRes.Items {
+		assignMap[as.StudentRollNo] = append(assignMap[as.StudentRollNo], as)
+	}
+
+	type submissionItem struct {
+		StudentName   string       `json:"student_name"`
+		RollNo        string       `json:"roll_no"`
+		Email         string       `json:"email"`
+		PaperTitle    string       `json:"paper_title"`
+		AssignedAt    string       `json:"assigned_at"`
+		Status        string       `json:"status"`
+		AnsweredCount int          `json:"answered_count"`
+		QuestionCount int          `json:"question_count"`
+		Assignments   []assignment `json:"assignments"`
+	}
+
+	submissionList := make([]submissionItem, 0, len(attempts.Items))
+	for _, att := range attempts.Items {
+		var students struct {
+			Items []student `json:"items"`
+		}
+		_ = client.listRecords("students", fmt.Sprintf(`roll_no = %q`, att.StudentRollNo), &students)
+
+		name := "Student"
+		email := ""
+		if len(students.Items) > 0 {
+			name = students.Items[0].Name
+			email = students.Items[0].Email
+		}
+
+		var pap questionPaper
+		_ = client.getRecord("question_papers", att.PaperID, &pap)
+
+		studentAssigns := assignMap[att.StudentRollNo]
+		answered := 0
+		for _, as := range studentAssigns {
+			if strings.TrimSpace(as.Response) != "" {
+				answered++
+			}
+		}
+
+		submissionList = append(submissionList, submissionItem{
+			StudentName:    name,
+			RollNo:         att.StudentRollNo,
+			Email:          email,
+			PaperTitle:     pap.Title,
+			AssignedAt:     att.AssignedAt,
+			Status:         att.Status,
+			AnsweredCount:  answered,
+			QuestionCount:  len(studentAssigns),
+			Assignments:    studentAssigns,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "submissions fetched", Data: submissionList})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {

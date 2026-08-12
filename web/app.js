@@ -68,6 +68,15 @@ if (codeEditor) {
       codeEditor.selectionStart = codeEditor.selectionEnd = start + newlineWithIndent.length;
     }
   });
+
+  // Sync editor content in real-time to the current draft
+  codeEditor.addEventListener('input', () => {
+    if (state.questions.length === 0) return;
+    const q = state.questions[state.activeQuestionIndex];
+    if (q && state.drafts[q.id]) {
+      state.drafts[q.id].code = codeEditor.value;
+    }
+  });
 }
 
 const renderAuthLayout = () => {
@@ -201,10 +210,42 @@ const loadTabState = (index) => {
   const q = state.questions[index];
   if (!q) return;
 
-  questionLabel.textContent = `Question ${q.number}`;
+  questionLabel.textContent = `Question ${q.number || (index + 1)}`;
   questionTitle.textContent = q.title;
   questionPrompt.textContent = q.prompt;
   state.questionId = q.id;
+
+  const attachDiv = el('studentAttachments');
+  if (attachDiv) {
+    if (q.attachmentUrls && q.attachmentUrls.length > 0) {
+      attachDiv.innerHTML = q.attachmentUrls.map(url => {
+        const parts = url.split('/');
+        const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
+        const fullUrl = `${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
+        
+        const lower = filename.toLowerCase();
+        const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
+
+        if (isImage) {
+          return `
+            <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-bottom: 8px;">
+              <img class="student-attachment-image" src="${fullUrl}" alt="${filename}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1.5px solid #e4e4e7; object-fit: contain; background: #f8fafc; cursor: zoom-in;" />
+            </div>
+          `;
+        }
+
+        return `<a href="${fullUrl}" target="_blank" style="font-size: 0.85rem; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">📎 ${filename}</a>`;
+      }).join('');
+
+      attachDiv.querySelectorAll('.student-attachment-image').forEach(img => {
+        img.addEventListener('click', () => {
+          openImageLightbox(img.src);
+        });
+      });
+    } else {
+      attachDiv.innerHTML = '';
+    }
+  }
 
   const draft = state.drafts[q.id] || {
     code: '',
@@ -275,9 +316,72 @@ const loadStudentExam = async () => {
   if (!state.token) return;
   try {
     let assignments = [];
+    let hasRealAssignments = false;
 
-    if (state.demoMode) {
-      // Inject sample questions for every supported language
+    // Load actual student assignments from server
+    try {
+      const res = await api(`/api/assignments?roll_no=${encodeURIComponent(state.rollNumber)}`);
+      let data = res.data;
+      if (data && !Array.isArray(data)) {
+        assignments = data.assignments || [];
+      } else {
+        assignments = data || [];
+      }
+      if (assignments.length > 0) {
+        hasRealAssignments = true;
+        
+        // Block re-entry if the attempt is already submitted
+        if (data && !Array.isArray(data) && data.attempts && data.attempts.length > 0) {
+          const att = data.attempts[0];
+          if (att.status === 'submitted' && !state.demoMode) {
+            throw new Error('You have already submitted this exam. Access locked.');
+          }
+        }
+
+        examLabel.textContent = state.demoMode ? `Assigned Lab Exam [DEMO]` : `Assigned Lab Exam`;
+        if (data && !Array.isArray(data) && data.attempts && data.attempts.length > 0) {
+          const att = data.attempts[0];
+          state.questions = att.questions.map((q) => ({
+            id: q.id, // the assignment record ID
+            number: q.number,
+            title: `Question ${q.number}`,
+            prompt: q.question_text,
+            response: q.response || '',
+            attachmentUrls: q.attachment_urls || []
+          }));
+        } else {
+          // Fallback to legacy assignments mapping
+          state.questions = assignments.map((a, idx) => ({
+            id: a.id,
+            number: idx + 1,
+            title: `Question ${idx + 1}`,
+            prompt: a.question_text,
+            response: a.response || '',
+            attachmentUrls: []
+          }));
+        }
+        
+        state.examId = assignments[0].exam_id;
+        try {
+          await api('/api/attempts/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_roll_no: state.rollNumber,
+              exam_id: state.examId
+            })
+          });
+          console.log('[Attempts] Exam session started.');
+        } catch (err) {
+          console.warn('[Attempts] Failed to start attempt:', err.message);
+        }
+      }
+    } catch (e) {
+      console.warn('[Attempts] Failed to load server assignments:', e.message);
+    }
+
+    // If we are in demoMode and have no assignments on the server, fall back to mock questions
+    if (state.demoMode && !hasRealAssignments) {
       examLabel.textContent = 'Demo Test Environment';
       state.questions = [
         { id: 'demo-py',    number: 1, title: 'Python',  prompt: 'Print "Hello from Python!" and show the sum of 1 to 10.' },
@@ -287,19 +391,20 @@ const loadStudentExam = async () => {
         { id: 'demo-r',     number: 5, title: 'R',       prompt: 'Write an R script that prints "Hello from R!" and computes mean of c(1,2,3,4,5).' },
         { id: 'demo-sql',   number: 6, title: 'MySQL',   prompt: 'Write a MySQL query: SELECT VERSION(); and SHOW DATABASES;' },
       ];
-    } else {
-      const res = await api(`/api/assignments?roll_no=${encodeURIComponent(state.rollNumber)}`);
-      assignments = res.data || [];
-      examLabel.textContent = `Assigned Lab Exam`;
-      state.questions = assignments.map((a, idx) => ({
-        id: a.id,
-        number: idx + 1,
-        title: `Question ${idx + 1}`,
-        prompt: a.question_text
-      })) || [];
+    } else if (!hasRealAssignments) {
+      // If a regular student has no assignments, throw an error
+      throw new Error('No assignments found for this roll number');
     }
 
     state.drafts = {};
+    state.questions.forEach((q) => {
+      state.drafts[q.id] = {
+        code: q.response || '',
+        language: 'python',
+        terminal: 'Terminal ready. Write code and click Run Code.',
+        terminalColor: '#10b981',
+      };
+    });
     state.activeQuestionIndex = 0;
 
     if (state.questions.length > 0) {
@@ -539,6 +644,244 @@ const loadFacultyData = async () => {
   }
 };
 
+const loadExamSubmissions = async (examId) => {
+  const tbody = el('examSubmissionsList');
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="7" style="padding: 16px; text-align: center; color: #71717a;">Loading submissions...</td></tr>`;
+
+  try {
+    const res = await api(`/api/faculty/exams/${examId}/submissions`);
+    const submissions = res.data || [];
+    if (submissions.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="padding: 16px; text-align: center; color: #71717a;">No student paper assignments made yet.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = submissions.map((row) => {
+      const dt = new Date(row.assigned_at).toLocaleString();
+      let statusColor = '#e2e8f0';
+      let statusText = 'Assigned';
+      if (row.status === 'started') {
+        statusColor = '#dbeafe';
+        statusText = 'In Progress';
+      } else if (row.status === 'submitted') {
+        statusColor = '#d1fae5';
+        statusText = 'Submitted';
+      }
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0; hover: background-color: #f1f5f9;">
+          <td style="padding: 10px 12px; font-weight: 500;">${row.student_name}</td>
+          <td style="padding: 10px 12px;">${row.roll_no}</td>
+          <td style="padding: 10px 12px;">${row.paper_title || 'N/A'}</td>
+          <td style="padding: 10px 12px; font-size: 0.85rem; color: #64748b;">${dt}</td>
+          <td style="padding: 10px 12px;">
+            <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: ${statusColor}; text-transform: capitalize;">${statusText}</span>
+          </td>
+          <td style="padding: 10px 12px;">
+            <span style="font-weight: 700; color: #0f766e;">${row.answered_count}</span> / ${row.question_count}
+          </td>
+          <td style="padding: 10px 12px; text-align: center;">
+            <button class="secondary view-responses-btn" data-roll="${row.roll_no}" style="padding: 4px 8px; font-size: 0.8rem; height: 28px;">View Responses</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('.view-responses-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const roll = btn.dataset.roll;
+        const row = submissions.find(r => r.roll_no === roll);
+        if (row) {
+          showStudentResponsesModal(row);
+        }
+      });
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" style="padding: 16px; text-align: center; color: #ef4444;">Failed to load: ${err.message}</td></tr>`;
+  }
+};
+
+const showStudentResponsesModal = (row) => {
+  const modal = el('studentResponseModal');
+  const title = el('responseModalTitle');
+  const body = el('responseModalBody');
+  if (!modal || !title || !body) return;
+
+  title.textContent = `Responses for ${row.student_name} (${row.roll_no}) — Set: ${row.paper_title}`;
+  
+  if (!row.assignments || row.assignments.length === 0) {
+    body.innerHTML = `<p style="color: #71717a; text-align: center;">No questions assigned.</p>`;
+  } else {
+    // Sort questions by number
+    const sorted = [...row.assignments].sort((a, b) => {
+      // Find question numbers if present, otherwise fallback
+      return a.id.localeCompare(b.id);
+    });
+
+    body.innerHTML = sorted.map((as, idx) => {
+      const responseText = as.response ? as.response.trim() : '';
+      const formattedResponse = responseText ? `<pre style="background: #18181b; color: #ffffff; padding: 14px; border-radius: 10px; font-family: monospace; font-size: 0.9rem; line-height: 1.4; overflow-x: auto; margin: 8px 0; white-space: pre-wrap; word-break: break-all;">${escapeHTML(responseText)}</pre>` : `<p style="color: #a1a1aa; font-style: italic; margin: 8px 0;">No response submitted yet.</p>`;
+      
+      const subTime = as.submitted_at ? `<span style="font-size: 0.8rem; color: #64748b; margin-left: 12px;">Submitted: ${new Date(as.submitted_at).toLocaleString()}</span>` : '';
+
+      // Format attachments if present
+      // In assignments table, the field is attachments (JSON string or list of filenames)
+      let attachHTML = '';
+      if (as.attachments) {
+        let files = [];
+        try {
+          if (typeof as.attachments === 'string') {
+            files = JSON.parse(as.attachments);
+          } else if (Array.isArray(as.attachments)) {
+            files = as.attachments;
+          }
+        } catch (_) {}
+
+        if (files && files.length > 0) {
+          attachHTML = `
+            <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+              <span style="font-size: 0.8rem; font-weight: bold; color: #64748b; align-self: center;">Attachments:</span>
+              ${files.map(filename => {
+                const url = `/api/media/questions/${as.question_id}/${encodeURIComponent(filename)}?roll_no=${encodeURIComponent(row.roll_no)}`;
+                return `<a href="${url}" target="_blank" style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px; text-decoration: none; font-weight: 500;">📎 ${filename}</a>`;
+              }).join('')}
+            </div>
+          `;
+        }
+      }
+
+      return `
+        <div style="border: 1px solid #e4e4e7; border-radius: 12px; padding: 16px; background: #ffffff;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px; margin-bottom: 12px;">
+            <span style="font-weight: bold; color: #18181b; font-size: 1.05rem;">Question ${idx + 1} (${as.marks || 0} Marks)</span>
+            ${subTime}
+          </div>
+          <p style="color: #475569; margin: 0 0 8px 0; line-height: 1.5; font-size: 0.95rem;">${as.question_text}</p>
+          ${attachHTML}
+          <div style="margin-top: 12px;">
+            <span style="font-size: 0.8rem; font-weight: bold; color: #475569;">Student Response:</span>
+            ${formattedResponse}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  modal.classList.remove('hidden');
+};
+
+const escapeHTML = (str) => {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+};
+
+// Bind modal close trigger and Lightbox events
+document.addEventListener('DOMContentLoaded', () => {
+  const closeBtn = el('closeResponseModalBtn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      const modal = el('studentResponseModal');
+      if (modal) modal.classList.add('hidden');
+    });
+  }
+
+  // Lightbox Image Viewer Logic
+  let zoomScale = 1;
+  const modal = el('imageLightboxModal');
+  const img = el('lightboxImage');
+  const wrapper = el('lightboxImageWrapper');
+
+  window.openImageLightbox = (src) => {
+    if (!modal || !img) return;
+    img.src = src;
+    zoomScale = 1;
+    img.style.transform = `scale(${zoomScale})`;
+    modal.classList.remove('hidden');
+    if (wrapper) {
+      wrapper.scrollLeft = 0;
+      wrapper.scrollTop = 0;
+    }
+  };
+
+  const closeLightbox = () => {
+    if (modal) modal.classList.add('hidden');
+  };
+
+  if (el('closeLightboxBtn')) {
+    el('closeLightboxBtn').addEventListener('click', closeLightbox);
+  }
+
+  const updateZoom = (change) => {
+    if (!img) return;
+    zoomScale = Math.min(4, Math.max(0.5, zoomScale + change));
+    img.style.transform = `scale(${zoomScale})`;
+  };
+
+  if (el('zoomInBtn')) {
+    el('zoomInBtn').addEventListener('click', () => updateZoom(0.25));
+  }
+  if (el('zoomOutBtn')) {
+    el('zoomOutBtn').addEventListener('click', () => updateZoom(-0.25));
+  }
+  if (el('zoomResetBtn')) {
+    el('zoomResetBtn').addEventListener('click', () => {
+      zoomScale = 1;
+      if (img) img.style.transform = 'scale(1)';
+      if (wrapper) {
+        wrapper.scrollLeft = 0;
+        wrapper.scrollTop = 0;
+      }
+    });
+  }
+
+  // Drag to pan setup
+  let isDragging = false;
+  let startX, startY;
+  let scrollLeft, scrollTop;
+
+  if (wrapper) {
+    wrapper.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      wrapper.style.cursor = 'grabbing';
+      startX = e.pageX - wrapper.offsetLeft;
+      startY = e.pageY - wrapper.offsetTop;
+      scrollLeft = wrapper.scrollLeft;
+      scrollTop = wrapper.scrollTop;
+    });
+
+    wrapper.addEventListener('mouseleave', () => {
+      isDragging = false;
+      wrapper.style.cursor = 'grab';
+    });
+
+    wrapper.addEventListener('mouseup', () => {
+      isDragging = false;
+      wrapper.style.cursor = 'grab';
+    });
+
+    wrapper.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      const x = e.pageX - wrapper.offsetLeft;
+      const y = e.pageY - wrapper.offsetTop;
+      const walkX = (x - startX) * 1.5;
+      const walkY = (y - startY) * 1.5;
+      wrapper.scrollLeft = scrollLeft - walkX;
+      wrapper.scrollTop = scrollTop - walkY;
+    });
+
+    // Mouse wheel zoom support
+    wrapper.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        updateZoom(0.1);
+      } else {
+        updateZoom(-0.1);
+      }
+    }, { passive: false });
+  }
+});
+
 const loadExamsForAssignment = async (assignmentId) => {
   try {
     const examsRes = await api('/api/faculty/exams');
@@ -596,6 +939,7 @@ const loadExamDetails = async (examId) => {
         <button id="renameExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem;">Rename</button>
         ${exam.status === 'draft' ? `<button id="publishExamBtn" class="primary" style="padding: 6px 12px; font-size: 0.85rem; background: #2563eb !important; border-color: #2563eb !important;">Publish</button>` : ''}
         ${exam.status === 'published' ? `<button id="archiveExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem; border-color: #71717a !important; color: #71717a !important;">Archive</button>` : ''}
+        <button id="cloneExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem; border-color: #10b981 !important; color: #10b981 !important;">Clone</button>
         <button id="deleteExamBtn" class="secondary" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important;">Delete</button>
       `;
 
@@ -641,6 +985,42 @@ const loadExamDetails = async (examId) => {
         });
       }
 
+      el('cloneExamBtn').addEventListener('click', async () => {
+        const others = state.assignments.filter(item => item.id !== state.activeAssignmentId);
+        if (others.length === 0) {
+          alert('You have no other teaching assignments to clone this exam to.');
+          return;
+        }
+
+        let promptText = 'Select target teaching assignment to clone to:\n\n';
+        others.forEach((item, idx) => {
+          promptText += `${idx + 1}. ${item.subject.name} - ${item.subject.code} [Sec ${item.section}, Sem ${item.semester}]\n`;
+        });
+        promptText += '\nEnter the option number (e.g. 1):';
+
+        const choice = prompt(promptText);
+        if (choice === null) return;
+        const choiceIdx = parseInt(choice.trim(), 10) - 1;
+        if (isNaN(choiceIdx) || choiceIdx < 0 || choiceIdx >= others.length) {
+          alert('Invalid choice');
+          return;
+        }
+
+        const target = others[choiceIdx];
+        const newTitle = prompt('Enter title for cloned exam (or cancel/leave blank for default):', exam.title + ' (Clone)');
+        if (newTitle === null) return;
+
+        try {
+          await api(`/api/faculty/exams/${examId}/clone`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ offering_id: target.id, title: newTitle.trim() })
+          });
+          logEvent('Cloned exam');
+          alert('Exam successfully cloned to class: ' + target.subject.name);
+        } catch (err) { alert(err.message); }
+      });
+
       el('deleteExamBtn').addEventListener('click', async () => {
         if (confirm('Delete this exam completely?')) {
           try {
@@ -651,6 +1031,19 @@ const loadExamDetails = async (examId) => {
             await loadExamsForAssignment(state.activeAssignmentId);
           } catch (err) { alert(err.message); }
         }
+      });
+    }
+
+    // Load submissions for this exam
+    loadExamSubmissions(examId).catch((error) => console.error('Failed to load submissions:', error));
+
+    const refreshSubmissionsBtn = el('refreshSubmissionsBtn');
+    if (refreshSubmissionsBtn) {
+      // Clear existing listeners
+      const newBtn = refreshSubmissionsBtn.cloneNode(true);
+      refreshSubmissionsBtn.parentNode.replaceChild(newBtn, refreshSubmissionsBtn);
+      newBtn.addEventListener('click', () => {
+        loadExamSubmissions(examId).catch((error) => alert(error.message));
       });
     }
 
@@ -725,20 +1118,110 @@ const loadPaperDetails = async (paperId, examStatus) => {
       if (questions.length === 0) {
         questionsList.innerHTML = `<p style="color: #71717a; font-size: 0.9rem; margin: 0;">No questions added to this set yet.</p>`;
       } else {
-        questionsList.innerHTML = questions.map((q) => `
-          <div style="background: #ffffff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 16px; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-            <div>
-              <div style="font-weight: bold; color: #18181b; font-size: 1rem;">Q${q.number} <span style="font-weight: 500; font-size: 0.85rem; color: #71717a; margin-left: 8px;">(${q.marks} marks)</span></div>
-              <div style="color: #3f3f46; margin-top: 6px; font-size: 0.95rem; white-space: pre-wrap;">${q.text}</div>
-            </div>
-            ${examStatus === 'draft' ? `
-              <div style="display: flex; gap: 8px; margin-left: 12px;">
-                <button class="secondary edit-question-btn" data-id="${q.id}" data-num="${q.number}" data-marks="${q.marks}" data-text="${encodeURIComponent(q.text)}" style="padding: 4px 8px; font-size: 0.8rem;">Edit</button>
-                <button class="secondary delete-question-btn" data-id="${q.id}" style="padding: 4px 8px; font-size: 0.8rem; border-color: #ef4444 !important; color: #ef4444 !important;">Delete</button>
+        questionsList.innerHTML = questions.map((q) => {
+          let attachHTML = '';
+          if (q.attachments && q.attachments.length > 0) {
+            attachHTML = `
+              <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+                <span style="font-size: 0.8rem; font-weight: bold; color: #64748b; align-self: center;">Attachments:</span>
+                ${q.attachments.map(filename => {
+                  const url = `/api/media/questions/${q.id}/${encodeURIComponent(filename)}`;
+                  return `
+                    <span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; font-weight: 500;">
+                      <a href="${url}" target="_blank" style="color: inherit; text-decoration: none;">📎 ${filename}</a>
+                      ${examStatus === 'draft' ? `<span class="delete-q-attach-btn" data-qid="${q.id}" data-file="${encodeURIComponent(filename)}" style="cursor: pointer; color: #ef4444; font-weight: bold; margin-left: 4px;">✕</span>` : ''}
+                    </span>
+                  `;
+                }).join('')}
               </div>
-            ` : ''}
-          </div>
-        `).join('');
+            `;
+          }
+
+          return `
+            <div style="background: #ffffff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 16px; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+              <div>
+                <div style="font-weight: bold; color: #18181b; font-size: 1rem;">Q${q.number} <span style="font-weight: 500; font-size: 0.85rem; color: #71717a; margin-left: 8px;">(${q.marks} marks)</span></div>
+                <div style="color: #3f3f46; margin-top: 6px; font-size: 0.95rem; white-space: pre-wrap;">${q.text}</div>
+                ${attachHTML}
+              </div>
+              ${examStatus === 'draft' ? `
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-left: 12px; align-items: flex-end;">
+                  <div style="display: flex; gap: 8px;">
+                    <button class="secondary edit-question-btn" data-id="${q.id}" data-num="${q.number}" data-marks="${q.marks}" data-text="${encodeURIComponent(q.text)}" style="padding: 4px 8px; font-size: 0.8rem;">Edit</button>
+                    <button class="secondary delete-question-btn" data-id="${q.id}" style="padding: 4px 8px; font-size: 0.8rem; border-color: #ef4444 !important; color: #ef4444 !important;">Delete</button>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                    <label style="cursor: pointer; font-size: 0.75rem; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 2px 6px; border-radius: 4px; color: #475569;">
+                      <span>+ Attach File</span>
+                      <input type="file" class="attach-to-q-input" data-qid="${q.id}" style="display: none;" accept=".png,.jpeg,.jpg,.gif,.webp,.pdf,.csv" />
+                    </label>
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }).join('');
+
+        // Wire attachment deletion
+        questionsList.querySelectorAll('.delete-q-attach-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const qid = btn.dataset.qid;
+            const file = btn.dataset.file;
+            if (confirm(`Remove attachment ${decodeURIComponent(file)}?`)) {
+              try {
+                await api(`/api/faculty/questions/${qid}/attachments/${file}`, { method: 'DELETE' });
+                logEvent('Deleted question attachment');
+                const examRes = await api(`/api/faculty/exams/${state.activeExamId}`);
+                state.papers = examRes.data.papers || [];
+                await loadPaperDetails(paperId, examStatus);
+              } catch (err) { alert('Failed to delete attachment: ' + err.message); }
+            }
+          });
+        });
+
+        // Wire inline attachment upload
+        questionsList.querySelectorAll('.attach-to-q-input').forEach((input) => {
+          input.addEventListener('change', async (e) => {
+            const qid = input.dataset.qid;
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Validation
+            const allowed = ['.png', '.jpeg', '.jpg', '.gif', '.webp', '.pdf', '.csv'];
+            const ext = '.' + file.name.split('.').pop().toLowerCase();
+            if (!allowed.includes(ext)) {
+              alert('Only PNG, JPEG, GIF, WebP, PDF, and CSV files are allowed.');
+              return;
+            }
+            if (file.size > 100 * 1024 * 1024) {
+              alert('File size exceeds 100MB limit.');
+              return;
+            }
+
+            const formData = new FormData();
+            formData.append('attachments', file);
+
+            try {
+              const url = `/api/faculty/questions/${qid}/attachments`;
+              const xhr = new XMLHttpRequest();
+              xhr.open('POST', url);
+              if (state.token) {
+                xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+              }
+              xhr.onload = async () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                  logEvent('Uploaded attachment onto existing question');
+                  const examRes = await api(`/api/faculty/exams/${state.activeExamId}`);
+                  state.papers = examRes.data.papers || [];
+                  await loadPaperDetails(paperId, examStatus);
+                } else {
+                  alert('Upload failed: ' + xhr.responseText);
+                }
+              };
+              xhr.send(formData);
+            } catch (err) { alert(err.message); }
+          });
+        });
 
         questionsList.querySelectorAll('.delete-question-btn').forEach((btn) => {
           btn.addEventListener('click', async () => {
@@ -799,21 +1282,49 @@ const loadAdminData = async () => {
     const facList = facRes.data || [];
     const facTable = el('adminFacultyList');
     if (facTable) {
-      facTable.innerHTML = facList.map((fac) => `
-        <tr style="border-bottom: 1px solid #e4e4e7;">
-          <td style="padding: 12px 12px; font-weight: 600; color: #18181b;">${fac.name}</td>
-          <td style="padding: 12px 12px; color: #52525b;">${fac.email}</td>
-          <td style="padding: 12px 12px; text-align: center;">
-            <button class="secondary delete-fac-btn" data-id="${fac.id}" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important; background: transparent; border: 1.5px solid #ef4444; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">Delete</button>
-          </td>
-        </tr>
-      `).join('');
+      facTable.innerHTML = facList.map((fac) => {
+        const isActive = (fac.status || 'active') === 'active';
+        const badgeColor = isActive ? '#d1fae5' : '#fee2e2';
+        const badgeText = isActive ? 'Active' : 'Inactive';
+        const toggleText = isActive ? 'Deactivate' : 'Activate';
+
+        return `
+          <tr style="border-bottom: 1px solid #e4e4e7;">
+            <td style="padding: 12px 12px; font-weight: 600; color: #18181b;">${fac.name}</td>
+            <td style="padding: 12px 12px; color: #52525b;">${fac.email}</td>
+            <td style="padding: 12px 12px;">
+              <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: ${badgeColor}; text-transform: capitalize;">${badgeText}</span>
+            </td>
+            <td style="padding: 12px 12px; text-align: center; display: flex; gap: 8px; justify-content: center;">
+              <button class="secondary toggle-status-btn" data-id="${fac.id}" data-status="${fac.status || 'active'}" style="padding: 6px 12px; font-size: 0.85rem; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">${toggleText}</button>
+              <button class="secondary delete-fac-btn" data-id="${fac.id}" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important; background: transparent; border: 1.5px solid #ef4444; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">Delete</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      facTable.querySelectorAll('.toggle-status-btn').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          const fid = btn.dataset.id;
+          const currentStatus = btn.dataset.status;
+          const targetStatus = currentStatus === 'active' ? 'inactive' : 'active';
+          try {
+            await api(`/api/admin/faculty/${fid}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: targetStatus })
+            });
+            logEvent(`Toggled status to ${targetStatus} for faculty ${fid}`);
+            await loadAdminData();
+          } catch (err) { alert(err.message); }
+        });
+      });
 
       facTable.querySelectorAll('.delete-fac-btn').forEach((btn) => {
         btn.addEventListener('click', async (e) => {
           if (confirm('Delete this faculty login?')) {
             try {
-              await api(`/api/admin/faculty/${e.target.dataset.id}`, { method: 'DELETE' });
+              await api(`/api/admin/faculty/${btn.dataset.id}`, { method: 'DELETE' });
               logEvent('Deleted faculty login');
               await loadAdminData();
             } catch (err) { alert(err.message); }
@@ -892,6 +1403,70 @@ const loadAdminData = async () => {
         });
       });
     }
+
+    // 4. Load Student Batches (Classes List)
+    const batchRes = await api('/api/admin/batches');
+    const batchList = batchRes.data || [];
+    const batchTable = el('adminRosterBatchesList');
+    if (batchTable) {
+      if (batchList.length === 0) {
+        batchTable.innerHTML = `<tr><td colspan="4" style="padding: 12px; text-align: center; color: #71717a;">No student batches uploaded yet.</td></tr>`;
+      } else {
+        batchTable.innerHTML = batchList.map((b) => {
+          const dt = new Date(b.uploaded_at).toLocaleString();
+          return `
+            <tr style="border-bottom: 1px solid #e4e4e7;">
+              <td style="padding: 12px 12px; font-weight: 600; color: #18181b;">Yr ${b.year} / Sem ${b.semester} / Sec ${b.section}</td>
+              <td style="padding: 12px 12px; color: #52525b;">${b.source_file}</td>
+              <td style="padding: 12px 12px; color: #52525b;">${dt}</td>
+              <td style="padding: 12px 12px; text-align: center; font-weight: bold; color: #0f766e;">${b.students_count || 0}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    const assignBatchSelect = el('assignBatchSelect');
+    if (assignBatchSelect) {
+      if (batchList.length === 0) {
+        assignBatchSelect.innerHTML = `<option value="">No student classes available (upload roster first)</option>`;
+      } else {
+        assignBatchSelect.innerHTML = batchList.map((b, idx) => `
+          <option value="${idx}">Yr ${b.year} / Sem ${b.semester} / Sec ${b.section} (${b.students_count || 0} students)</option>
+        `).join('');
+      }
+    }
+
+    // Toggle manual vs dropdown class logic
+    const toggleManualBtn = el('toggleManualAssignClassBtn');
+    const toggleDropdownBtn = el('toggleDropdownAssignClassBtn');
+    const dropdownArea = el('assignBatchDropdownArea');
+    const manualArea = el('assignManualClassArea');
+
+    if (toggleManualBtn && toggleDropdownBtn && dropdownArea && manualArea) {
+      // Clear listeners
+      const newToggleManual = toggleManualBtn.cloneNode(true);
+      toggleManualBtn.parentNode.replaceChild(newToggleManual, toggleManualBtn);
+      newToggleManual.addEventListener('click', (e) => {
+        e.preventDefault();
+        dropdownArea.classList.add('hidden');
+        manualArea.classList.remove('hidden');
+        state.assignClassMode = 'manual';
+      });
+
+      const newToggleDropdown = toggleDropdownBtn.cloneNode(true);
+      toggleDropdownBtn.parentNode.replaceChild(newToggleDropdown, toggleDropdownBtn);
+      newToggleDropdown.addEventListener('click', (e) => {
+        e.preventDefault();
+        manualArea.classList.add('hidden');
+        dropdownArea.classList.remove('hidden');
+        state.assignClassMode = 'dropdown';
+      });
+    }
+
+    // Default mode
+    state.assignClassMode = 'dropdown';
+    state.batchList = batchList;
 
   } catch (err) {
     logEvent(`Failed to load admin data: ${err.message}`);
@@ -972,7 +1547,21 @@ loginForm.addEventListener('submit', async (event) => {
 
       if (!isDemo) {
         const res = await api(`/api/assignments?roll_no=${encodeURIComponent(rollNumber)}`);
-        if (!res.data || res.data.length === 0) {
+        let data = res.data;
+        let assignments = [];
+        if (data && !Array.isArray(data)) {
+          assignments = data.assignments || [];
+          if (data.attempts && data.attempts.length > 0) {
+            const hasSubmitted = data.attempts.some(att => att.status === 'submitted');
+            if (hasSubmitted) {
+              throw new Error('You have already submitted this exam. Access locked.');
+            }
+          }
+        } else {
+          assignments = data || [];
+        }
+
+        if (assignments.length === 0) {
           throw new Error('No assignments found for this roll number');
         }
       }
@@ -1148,14 +1737,16 @@ const doEndExam = async () => {
   for (const q of state.questions) {
     const draft = state.drafts[q.id];
     const codeToSubmit = draft ? draft.code : '';
+    // Skip submit for mock demo questions
+    if (q.id.startsWith('demo-')) continue;
     try {
-      await api('/api/v1/student/submit', {
+      await api('/api/submissions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          exam_id: state.examId,
-          question_id: q.id,
-          code: codeToSubmit,
+          assignment_id: q.id,
+          student_roll_no: state.rollNumber,
+          response: codeToSubmit,
         }),
       });
       logEvent(`Final submission saved for ${q.title}.`);
@@ -1164,18 +1755,22 @@ const doEndExam = async () => {
     }
   }
 
-  // Notify server of voluntary end
-  try {
-    await api('/api/v1/student/violation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        exam_id: state.examId,
-        kind: 'exam-ended',
-        details: 'Student voluntarily ended the exam session.'
-      })
-    });
-  } catch (_) {}
+  // Final submit for the whole attempt
+  if (state.examId) {
+    try {
+      await api('/api/attempts/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_roll_no: state.rollNumber,
+          exam_id: state.examId,
+        }),
+      });
+      logEvent('Exam attempt submitted and locked successfully.');
+    } catch (err) {
+      logEvent(`Warning: final attempt submit failed: ${err.message}`);
+    }
+  }
 
   // Clear session
   state.token = '';
@@ -1321,7 +1916,16 @@ el('runCodeBtn').addEventListener('click', () => {
     cleanupRunState();
   });
 
-  window.electronAPI.runCode(code, lang);
+  const q = state.questions[state.activeQuestionIndex];
+  const attachments = (q && q.attachmentUrls) ? q.attachmentUrls.map(url => {
+    const parts = url.split('/');
+    const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
+    // Construct the absolute download URL including protocol, host and roll_no token
+    const fullUrl = `${state.serverUrl || 'http://localhost:8080'}${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
+    return { filename, url: fullUrl };
+  }) : [];
+
+  window.electronAPI.runCode(code, lang, attachments);
 });
 
 
@@ -1748,12 +2352,27 @@ window.addEventListener('load', async () => {
     el('createAssignmentBtn').addEventListener('click', async () => {
       const faculty_id = el('assignFacultySelect').value;
       const subject_id = el('assignSubjectSelect').value;
-      const year = el('assignYearInput').value.trim();
-      const semester = el('assignSemesterInput').value.trim();
-      const section = el('assignSectionInput').value.trim();
+
+      let year = '';
+      let semester = '';
+      let section = '';
+
+      if (state.assignClassMode === 'dropdown') {
+        const idx = el('assignBatchSelect').value;
+        if (idx !== '' && state.batchList && state.batchList[idx]) {
+          const batch = state.batchList[idx];
+          year = batch.year;
+          semester = batch.semester;
+          section = batch.section;
+        }
+      } else {
+        year = el('assignYearInput').value.trim();
+        semester = el('assignSemesterInput').value.trim();
+        section = el('assignSectionInput').value.trim();
+      }
 
       if (!faculty_id || !subject_id || !year || !semester || !section) {
-        alert('Please fill all assignment fields');
+        alert('Please fill all assignment fields. (Ensure you have uploaded a student roster class first)');
         return;
       }
 
@@ -1875,6 +2494,91 @@ window.addEventListener('load', async () => {
     });
   }
 
+  // Selected files for the new question dropzone
+  let selectedFiles = [];
+
+  const updateSelectedFilesUI = () => {
+    const list = el('selectedFilesList');
+    if (!list) return;
+    list.innerHTML = selectedFiles.map((file, idx) => `
+      <span style="font-size: 0.8rem; background: #e2e8f0; color: #334155; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; font-weight: 500; margin-bottom: 4px;">
+        <span>📎 ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+        <span class="remove-selected-file" data-idx="${idx}" style="cursor: pointer; color: #ef4444; font-weight: bold; margin-left: 4px;">✕</span>
+      </span>
+    `).join('');
+
+    list.querySelectorAll('.remove-selected-file').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const idx = Number(btn.dataset.idx);
+        selectedFiles.splice(idx, 1);
+        updateSelectedFilesUI();
+      });
+    });
+  };
+
+  const handleFilesAdded = (filesList) => {
+    const allowed = ['.png', '.jpeg', '.jpg', '.gif', '.webp', '.pdf', '.csv'];
+    for (let i = 0; i < filesList.length; i++) {
+      const file = filesList[i];
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (!allowed.includes(ext)) {
+        alert(`File type not allowed: ${file.name}\nOnly PNG, JPEG, GIF, WebP, PDF, and CSV files are allowed.`);
+        continue;
+      }
+      if (file.size > 100 * 1024 * 1024) {
+        alert(`File size exceeds 100MB limit: ${file.name}`);
+        continue;
+      }
+      if (selectedFiles.length >= 5) {
+        alert('Max 5 attachments allowed per question.');
+        break;
+      }
+      selectedFiles.push(file);
+    }
+    updateSelectedFilesUI();
+  };
+
+  const dropzone = el('dropzone');
+  const fileInput = el('qAttachmentInput');
+
+  if (dropzone && fileInput) {
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', (e) => {
+      handleFilesAdded(e.target.files);
+      fileInput.value = '';
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.style.background = '#f1f5f9';
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.style.background = 'transparent';
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.background = 'transparent';
+      if (e.dataTransfer.files) {
+        handleFilesAdded(e.dataTransfer.files);
+      }
+    });
+
+    // Paste file handling
+    const handlePaste = (e) => {
+      if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
+        handleFilesAdded(e.clipboardData.files);
+        e.preventDefault();
+      }
+    };
+    dropzone.addEventListener('paste', handlePaste);
+    if (el('qTextInput')) {
+      el('qTextInput').addEventListener('paste', handlePaste);
+    }
+  }
+
   // Faculty: Save/Add Question
   if (el('addQuestionBtn')) {
     el('addQuestionBtn').addEventListener('click', async () => {
@@ -1891,22 +2595,39 @@ window.addEventListener('load', async () => {
         return;
       }
 
+      const formData = new FormData();
+      formData.append('number', number);
+      formData.append('marks', marks);
+      formData.append('text', text);
+
+      selectedFiles.forEach((file) => {
+        formData.append('attachments', file);
+      });
+
       try {
-        await api(`/api/faculty/papers/${state.activePaperId}/questions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            questions: [{ number, text, marks }]
-          })
-        });
-        logEvent(`Saved question ${number}`);
-        el('qNumInput').value = '';
-        el('qMarksInput').value = '';
-        el('qTextInput').value = '';
-        const res = await api(`/api/faculty/exams/${state.activeExamId}`);
-        const exam = res.data.exam;
-        await loadPaperDetails(state.activePaperId, exam.status);
-        await loadExamDetails(state.activeExamId);
+        const url = `/api/faculty/papers/${state.activePaperId}/questions`;
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        if (state.token) {
+          xhr.setRequestHeader('Authorization', 'Bearer ' + state.token);
+        }
+        xhr.onload = async () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            logEvent(`Saved question ${number}`);
+            el('qNumInput').value = '';
+            el('qMarksInput').value = '';
+            el('qTextInput').value = '';
+            selectedFiles = [];
+            updateSelectedFilesUI();
+            const res = await api(`/api/faculty/exams/${state.activeExamId}`);
+            const exam = res.data.exam;
+            await loadPaperDetails(state.activePaperId, exam.status);
+            await loadExamDetails(state.activeExamId);
+          } else {
+            alert('Failed to save question: ' + xhr.responseText);
+          }
+        };
+        xhr.send(formData);
       } catch (err) {
         alert('Failed to save question: ' + err.message);
       }
