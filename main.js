@@ -510,7 +510,7 @@ ipcMain.on('run-code', async (event, { code, language }) => {
       exitCode = await spawnAndStream(event, 'gcc', [cFile, '-o', binFile, '-lm']);
       if (exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        exitCode = await spawnAndStream(event, binFile, []);
+        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', binFile]);
       }
     }
 
@@ -525,7 +525,7 @@ ipcMain.on('run-code', async (event, { code, language }) => {
       exitCode = await spawnAndStream(event, 'g++', [cppFile, '-o', binFile, '-lm', '-std=c++17']);
       if (exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        exitCode = await spawnAndStream(event, binFile, []);
+        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', binFile]);
       }
     }
 

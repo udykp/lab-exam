@@ -1255,6 +1255,15 @@ el('runCodeBtn').addEventListener('click', () => {
   runBtn.style.color = '#ffffff';
   runBtn.disabled = false;
 
+  // Show stdin input row immediately so user can type as soon as program prompts
+  const inputRow = el('terminalInputRow');
+  const inputEl  = el('terminalInput');
+  if (inputRow) {
+    inputRow.classList.remove('hidden');
+    inputEl.value = '';
+    inputEl.focus();
+  }
+
   const cleanupRunState = () => {
     runBtn.disabled = false;
     runBtn.textContent = 'Run Code';
@@ -1262,6 +1271,10 @@ el('runCodeBtn').addEventListener('click', () => {
     runBtn.style.removeProperty('color');
     state.runWs = null;
     window.electronAPI.removeCodeListeners();
+    
+    if (el('terminalInputRow')) {
+      el('terminalInputRow').classList.add('hidden');
+    }
 
     // Save draft after execution
     const q = state.questions[state.activeQuestionIndex];
@@ -1637,13 +1650,11 @@ window.addEventListener('load', async () => {
     el('terminalInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         const val = el('terminalInput').value;
-        if (state.runWs && state.runWs.readyState === WebSocket.OPEN) {
+        if (state.runWs && window.electronAPI) {
+          // Output the input to terminal screen so they see what they typed
           el('terminalOutput').textContent += val + '\n';
           el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-          state.runWs.send(JSON.stringify({
-            type: 'input',
-            data: val + '\n'
-          }));
+          window.electronAPI.sendStdin(val);
         }
         el('terminalInput').value = '';
       }
