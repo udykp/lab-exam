@@ -5,6 +5,7 @@ const http = require('http');
 
 let mainWindow;
 let serverProcess = null;
+let focusLockInterval = null;
 
 // Determine Go backend binary path
 const isWin = process.platform === 'win32';
@@ -390,6 +391,23 @@ ipcMain.on('lock-exam-window', () => {
     mainWindow.setKiosk(true);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     disableSuperKey();  // Block Windows key at OS level
+    
+    // Start active focus enforcement loop (checks every 200ms)
+    // If the window loses focus, it immediately toggles kiosk mode to force focus back.
+    if (focusLockInterval) clearInterval(focusLockInterval);
+    focusLockInterval = setInterval(() => {
+      if (mainWindow && mainWindow._examLocked) {
+        if (!mainWindow.isFocused()) {
+          console.log('[ExamGuard] Window lost focus. Reclaiming instantly...');
+          mainWindow.focus();
+          mainWindow.setAlwaysOnTop(true, 'screen-saver');
+          mainWindow.setKiosk(false);
+          mainWindow.setKiosk(true);
+          mainWindow.focus();
+        }
+      }
+    }, 200);
+
     console.log('[ExamGuard] Window locked to fullscreen kiosk screen-saver layer.');
   }
 });
@@ -406,6 +424,12 @@ ipcMain.on('unlock-exam-window', () => {
     mainWindow.setMovable(true);
     mainWindow.setMinimizable(true);
     restoreSuperKey();  // Restore Windows key to system defaults
+    
+    // Clear focus lock loop
+    if (focusLockInterval) {
+      clearInterval(focusLockInterval);
+      focusLockInterval = null;
+    }
   }
 });
 
