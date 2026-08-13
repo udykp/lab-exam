@@ -6,8 +6,8 @@ const state = {
   role: localStorage.getItem('securemlexam_role') || 'student',
   name: localStorage.getItem('securemlexam_name') || '',
   rollNumber: localStorage.getItem('securemlexam_rollnumber') || '',
-  serverUrl: localStorage.getItem('securemlexam_server_url') || 'http://localhost:8080',
-  examId: 'exam-1',
+  serverUrl: localStorage.getItem('securemlexam_server_url') || 'https://exams.crraoaimscs.ac.in',
+  examId: localStorage.getItem('securemlexam_exam_id') || 'exam-1',
   ws: null,
   securityArmed: false,
   demoMode: false,  // true for DEMO roll — no restrictions
@@ -323,25 +323,25 @@ const loadStudentExam = async () => {
       const res = await api(`/api/assignments?roll_no=${encodeURIComponent(state.rollNumber)}`);
       let data = res.data;
       if (data && !Array.isArray(data)) {
-        assignments = data.assignments || [];
+        assignments = (data.assignments || []).filter(a => a.exam_id === state.examId);
       } else {
-        assignments = data || [];
+        assignments = (data || []).filter(a => a.exam_id === state.examId);
       }
       if (assignments.length > 0) {
         hasRealAssignments = true;
         
+        const activeAtt = (data && !Array.isArray(data) && data.attempts) ? data.attempts.find(a => a.exam_id === state.examId) : null;
+        
         // Block re-entry if the attempt is already submitted
-        if (data && !Array.isArray(data) && data.attempts && data.attempts.length > 0) {
-          const att = data.attempts[0];
-          if (att.status === 'submitted' && !state.demoMode) {
+        if (activeAtt) {
+          if (activeAtt.status === 'submitted' && !state.demoMode) {
             throw new Error('You have already submitted this exam. Access locked.');
           }
         }
 
         examLabel.textContent = state.demoMode ? `Assigned Lab Exam [DEMO]` : `Assigned Lab Exam`;
-        if (data && !Array.isArray(data) && data.attempts && data.attempts.length > 0) {
-          const att = data.attempts[0];
-          state.questions = att.questions.map((q) => ({
+        if (activeAtt) {
+          state.questions = activeAtt.questions.map((q) => ({
             id: q.id, // the assignment record ID
             number: q.number,
             title: `Question ${q.number}`,
@@ -360,8 +360,6 @@ const loadStudentExam = async () => {
             attachmentUrls: []
           }));
         }
-        
-        state.examId = assignments[0].exam_id;
         try {
           await api('/api/attempts/start', {
             method: 'POST',
@@ -583,6 +581,7 @@ const loadStudentExam = async () => {
     state.token = '';
     state.securityArmed = false;
     localStorage.removeItem('securemlexam_token');
+    localStorage.removeItem('securemlexam_exam_id');
     updateGridLayout();
     const errorBox = el('loginError');
     if (errorBox) {
@@ -606,13 +605,18 @@ const loadFacultyData = async () => {
       if (state.assignments.length === 0) {
         assignmentList.innerHTML = `<p style="color: #71717a; font-size: 0.9rem; margin: 0;">No teaching assignments found.</p>`;
       } else {
-        assignmentList.innerHTML = state.assignments.map((item) => `
-          <div class="assignment-card" data-id="${item.id}" style="background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: all 0.2s ease;">
-            <div style="font-weight: bold; color: #18181b; font-size: 1.05rem;">${item.subject.name}</div>
-            <div style="font-size: 0.85rem; color: #71717a;">${item.subject.code} • Yr ${item.year} - Semester ${item.semester}</div>
-            <div style="font-size: 0.85rem; color: #71717a;">Class: ${item.section}</div>
-          </div>
-        `).join('');
+        assignmentList.innerHTML = state.assignments.map((item) => {
+          const year = item.year || (item.offering && item.offering.year) || '';
+          const semester = item.semester || (item.offering && item.offering.semester) || '';
+          const section = item.section || (item.offering && item.offering.section) || '';
+          return `
+            <div class="assignment-card" data-id="${item.id}" style="background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: all 0.2s ease;">
+              <div style="font-weight: bold; color: #18181b; font-size: 1.05rem;">${item.subject.name}</div>
+              <div style="font-size: 0.85rem; color: #71717a;">${item.subject.code} • Yr ${year} - Semester ${semester}</div>
+              <div style="font-size: 0.85rem; color: #71717a;">Class: ${section}</div>
+            </div>
+          `;
+        }).join('');
 
         assignmentList.querySelectorAll('.assignment-card').forEach((card) => {
           card.addEventListener('click', async (e) => {
@@ -651,7 +655,10 @@ const loadExamSubmissions = async (examId) => {
 
   try {
     const res = await api(`/api/faculty/exams/${examId}/submissions`);
-    const submissions = res.data || [];
+    let submissions = res.data || [];
+    if (res.data && !Array.isArray(res.data) && Array.isArray(res.data.submissions)) {
+      submissions = res.data.submissions;
+    }
     if (submissions.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7" style="padding: 16px; text-align: center; color: #71717a;">No student paper assignments made yet.</td></tr>`;
       return;
@@ -669,11 +676,15 @@ const loadExamSubmissions = async (examId) => {
         statusText = 'Submitted';
       }
 
+      const student_name = row.student_name || (row.student && row.student.name) || 'Student';
+      const roll_no = row.roll_no || (row.student && row.student.roll_no) || '';
+      const paper_title = row.paper_title || (row.paper && row.paper.title) || 'N/A';
+
       return `
         <tr style="border-bottom: 1px solid #e2e8f0; hover: background-color: #f1f5f9;">
-          <td style="padding: 10px 12px; font-weight: 500;">${row.student_name}</td>
-          <td style="padding: 10px 12px;">${row.roll_no}</td>
-          <td style="padding: 10px 12px;">${row.paper_title || 'N/A'}</td>
+          <td style="padding: 10px 12px; font-weight: 500;">${student_name}</td>
+          <td style="padding: 10px 12px;">${roll_no}</td>
+          <td style="padding: 10px 12px;">${paper_title}</td>
           <td style="padding: 10px 12px; font-size: 0.85rem; color: #64748b;">${dt}</td>
           <td style="padding: 10px 12px;">
             <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: ${statusColor}; text-transform: capitalize;">${statusText}</span>
@@ -682,7 +693,7 @@ const loadExamSubmissions = async (examId) => {
             <span style="font-weight: 700; color: #0f766e;">${row.answered_count}</span> / ${row.question_count}
           </td>
           <td style="padding: 10px 12px; text-align: center;">
-            <button class="secondary view-responses-btn" data-roll="${row.roll_no}" style="padding: 4px 8px; font-size: 0.8rem; height: 28px;">View Responses</button>
+            <button class="secondary view-responses-btn" data-roll="${roll_no}" style="padding: 4px 8px; font-size: 0.8rem; height: 28px;">View Responses</button>
           </td>
         </tr>
       `;
@@ -691,7 +702,10 @@ const loadExamSubmissions = async (examId) => {
     tbody.querySelectorAll('.view-responses-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const roll = btn.dataset.roll;
-        const row = submissions.find(r => r.roll_no === roll);
+        const row = submissions.find(r => {
+          const r_roll = r.roll_no || (r.student && r.student.roll_no);
+          return r_roll === roll;
+        });
         if (row) {
           showStudentResponsesModal(row);
         }
@@ -708,25 +722,28 @@ const showStudentResponsesModal = (row) => {
   const body = el('responseModalBody');
   if (!modal || !title || !body) return;
 
-  title.textContent = `Responses for ${row.student_name} (${row.roll_no}) — Set: ${row.paper_title}`;
-  
-  if (!row.assignments || row.assignments.length === 0) {
+  const student_name = row.student_name || (row.student && row.student.name) || 'Student';
+  const roll_no = row.roll_no || (row.student && row.student.roll_no) || '';
+  const paper_title = row.paper_title || (row.paper && row.paper.title) || 'N/A';
+  title.textContent = `Responses for ${student_name} (${roll_no}) — Set: ${paper_title}`;
+  const assignments = row.assignments || row.questions || [];
+  if (assignments.length === 0) {
     body.innerHTML = `<p style="color: #71717a; text-align: center;">No questions assigned.</p>`;
   } else {
     // Sort questions by number
-    const sorted = [...row.assignments].sort((a, b) => {
-      // Find question numbers if present, otherwise fallback
-      return a.id.localeCompare(b.id);
+    const sorted = [...assignments].sort((a, b) => {
+      const a_num = a.number || 0;
+      const b_num = b.number || 0;
+      return a_num - b_num;
     });
 
     body.innerHTML = sorted.map((as, idx) => {
       const responseText = as.response ? as.response.trim() : '';
-      const formattedResponse = responseText ? `<pre style="background: #18181b; color: #ffffff; padding: 14px; border-radius: 10px; font-family: monospace; font-size: 0.9rem; line-height: 1.4; overflow-x: auto; margin: 8px 0; white-space: pre-wrap; word-break: break-all;">${escapeHTML(responseText)}</pre>` : `<p style="color: #a1a1aa; font-style: italic; margin: 8px 0;">No response submitted yet.</p>`;
+      const formattedResponse = responseText ? `<pre style="background: #18181b; color: #ffffff; padding: 14px; border-radius: 10px; font-family: monospace; font-size: 0.95rem; line-height: 1.4; overflow-x: auto; margin: 8px 0; white-space: pre-wrap; word-break: break-all;">${escapeHTML(responseText)}</pre>` : `<p style="color: #a1a1aa; font-style: italic; margin: 8px 0;">No response submitted yet.</p>`;
       
       const subTime = as.submitted_at ? `<span style="font-size: 0.8rem; color: #64748b; margin-left: 12px;">Submitted: ${new Date(as.submitted_at).toLocaleString()}</span>` : '';
 
       // Format attachments if present
-      // In assignments table, the field is attachments (JSON string or list of filenames)
       let attachHTML = '';
       if (as.attachments) {
         let files = [];
@@ -739,11 +756,12 @@ const showStudentResponsesModal = (row) => {
         } catch (_) {}
 
         if (files && files.length > 0) {
+          const q_id = as.question_id || as.id || '';
           attachHTML = `
             <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
               <span style="font-size: 0.8rem; font-weight: bold; color: #64748b; align-self: center;">Attachments:</span>
               ${files.map(filename => {
-                const url = `/api/media/questions/${as.question_id}/${encodeURIComponent(filename)}?roll_no=${encodeURIComponent(row.roll_no)}`;
+                const url = `/api/media/questions/${q_id}/${encodeURIComponent(filename)}?roll_no=${encodeURIComponent(roll_no)}`;
                 return `<a href="${url}" target="_blank" style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px; text-decoration: none; font-weight: 500;">📎 ${filename}</a>`;
               }).join('')}
             </div>
@@ -751,13 +769,14 @@ const showStudentResponsesModal = (row) => {
         }
       }
 
+      const q_text = as.question_text || as.text || '';
       return `
         <div style="border: 1px solid #e4e4e7; border-radius: 12px; padding: 16px; background: #ffffff;">
           <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px; margin-bottom: 12px;">
-            <span style="font-weight: bold; color: #18181b; font-size: 1.05rem;">Question ${idx + 1} (${as.marks || 0} Marks)</span>
+            <span style="font-weight: bold; color: #18181b; font-size: 1.05rem;">Question ${as.number || (idx + 1)} (${as.marks || 0} Marks)</span>
             ${subTime}
           </div>
-          <p style="color: #475569; margin: 0 0 8px 0; line-height: 1.5; font-size: 0.95rem;">${as.question_text}</p>
+          <p style="color: #475569; margin: 0 0 8px 0; line-height: 1.5; font-size: 0.95rem;">${q_text}</p>
           ${attachHTML}
           <div style="margin-top: 12px;">
             <span style="font-size: 0.8rem; font-weight: bold; color: #475569;">Student Response:</span>
@@ -885,7 +904,13 @@ document.addEventListener('DOMContentLoaded', () => {
 const loadExamsForAssignment = async (assignmentId) => {
   try {
     const examsRes = await api('/api/faculty/exams');
-    const exams = (examsRes.data || []).filter(ex => ex.faculty_assignment_id === assignmentId);
+    const activeAssignment = state.assignments.find(a => a.id === assignmentId);
+    const exams = (examsRes.data || []).filter(ex => {
+      if (ex.faculty_assignment_id === assignmentId) return true;
+      if (ex.offering_id === assignmentId) return true;
+      if (activeAssignment && activeAssignment.offering_id && ex.offering_id === activeAssignment.offering_id) return true;
+      return false;
+    });
     state.exams = exams;
 
     const examsList = el('facultyExamsList');
@@ -898,7 +923,7 @@ const loadExamsForAssignment = async (assignmentId) => {
           return `
             <div style="background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 12px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <div>
-                <div style="font-weight: 600; color: #18181b;">${exam.title}</div>
+                <div style="font-weight: 600; color: #18181b;">${exam.title} <span style="font-size: 0.75rem; background: #f4f4f5; color: #71717a; padding: 2px 6px; border-radius: 4px; font-family: monospace; margin-left: 6px;">ID: ${exam.id}</span></div>
                 <div style="font-size: 0.8rem; color: #71717a; text-transform: capitalize;">${exam.status} • ${dt}</div>
               </div>
               <button class="secondary open-exam-btn" data-id="${exam.id}" style="padding: 6px 12px; font-size: 0.85rem;">Open</button>
@@ -930,7 +955,7 @@ const loadExamDetails = async (examId) => {
     detailsSec.scrollIntoView({ behavior: 'smooth' });
 
     el('examDetailTitle').textContent = exam.title;
-    el('examDetailMeta').innerHTML = `Subject: <strong>${exam.subject}</strong> | Class: Yr ${exam.year} / Sem ${exam.semester} / Sec ${exam.section} | Status: <strong style="text-transform: capitalize;">${exam.status}</strong>`;
+    el('examDetailMeta').innerHTML = `Exam ID: <strong style="color: #2563eb; background: #eff6ff; padding: 2px 8px; border-radius: 6px; font-family: monospace; font-size: 0.95rem;">${exam.id}</strong> | Subject: <strong>${exam.subject}</strong> | Class: Yr ${exam.year} / Sem ${exam.semester} / Sec ${exam.section} | Status: <strong style="text-transform: capitalize;">${exam.status}</strong>`;
 
     // Render action buttons based on status
     const actionsContainer = el('examDetailStatusActions');
@@ -994,7 +1019,9 @@ const loadExamDetails = async (examId) => {
 
         let promptText = 'Select target teaching assignment to clone to:\n\n';
         others.forEach((item, idx) => {
-          promptText += `${idx + 1}. ${item.subject.name} - ${item.subject.code} [Sec ${item.section}, Sem ${item.semester}]\n`;
+          const section = item.section || (item.offering && item.offering.section) || '';
+          const semester = item.semester || (item.offering && item.offering.semester) || '';
+          promptText += `${idx + 1}. ${item.subject.name} - ${item.subject.code} [Sec ${section}, Sem ${semester}]\n`;
         });
         promptText += '\nEnter the option number (e.g. 1):';
 
@@ -1378,12 +1405,16 @@ const loadAdminData = async () => {
     if (assignTable) {
       assignTable.innerHTML = assignList.map((item) => {
         const fac = facList.find(f => f.id === item.faculty_id) || { name: item.faculty_id };
-        const sub = subList.find(s => s.id === item.subject_id) || { name: item.subject_id };
+        const subject_id = item.subject_id || (item.offering && item.offering.subject_id) || (item.subject && item.subject.id) || '';
+        const sub = subList.find(s => s.id === subject_id) || { name: subject_id || 'Unknown' };
+        const year = item.year || (item.offering && item.offering.year) || '';
+        const semester = item.semester || (item.offering && item.offering.semester) || '';
+        const section = item.section || (item.offering && item.offering.section) || '';
         return `
           <tr style="border-bottom: 1px solid #e4e4e7;">
             <td style="padding: 12px 12px; font-weight: 600; color: #18181b;">${fac.name}</td>
             <td style="padding: 12px 12px; color: #52525b;">${sub.name}</td>
-            <td style="padding: 12px 12px; color: #52525b;">Yr ${item.year} / Sem ${item.semester} / Sec ${item.section}</td>
+            <td style="padding: 12px 12px; color: #52525b;">Yr ${year} / Sem ${semester} / Sec ${section}</td>
             <td style="padding: 12px 12px; text-align: center;">
               <button class="secondary delete-assign-btn" data-id="${item.id}" style="padding: 6px 12px; font-size: 0.85rem; border-color: #ef4444 !important; color: #ef4444 !important; background: transparent; border: 1.5px solid #ef4444; border-radius: 8px; cursor: pointer; transition: all 0.2s ease;">Delete</button>
             </td>
@@ -1515,7 +1546,7 @@ loginForm.addEventListener('submit', async (event) => {
   const mode = formData.get('role');
   const payload = { role: mode };
 
-  const serverUrl = formData.get('serverUrl') || 'http://localhost:8080';
+  const serverUrl = formData.get('serverUrl') || 'https://exams.crraoaimscs.ac.in';
   state.serverUrl = serverUrl.replace(/\/$/, '');
   localStorage.setItem('securemlexam_server_url', state.serverUrl);
 
@@ -1546,24 +1577,32 @@ loginForm.addEventListener('submit', async (event) => {
       const isDemo = rollNumber.trim().toUpperCase() === DEMO_ROLL;
 
       if (!isDemo) {
+        const examId = formData.get('examId') || 'exam-1';
+        state.examId = examId;
+        localStorage.setItem('securemlexam_exam_id', examId);
+
         const res = await api(`/api/assignments?roll_no=${encodeURIComponent(rollNumber)}`);
         let data = res.data;
         let assignments = [];
         if (data && !Array.isArray(data)) {
-          assignments = data.assignments || [];
+          assignments = (data.assignments || []).filter(a => a.exam_id === examId);
           if (data.attempts && data.attempts.length > 0) {
-            const hasSubmitted = data.attempts.some(att => att.status === 'submitted');
+            const hasSubmitted = data.attempts.some(att => att.exam_id === examId && att.status === 'submitted');
             if (hasSubmitted) {
               throw new Error('You have already submitted this exam. Access locked.');
             }
           }
         } else {
-          assignments = data || [];
+          assignments = (data || []).filter(a => a.exam_id === examId);
         }
 
         if (assignments.length === 0) {
-          throw new Error('No assignments found for this roll number');
+          throw new Error('No assignments found for this roll number and Exam ID');
         }
+      } else {
+        const examId = formData.get('examId') || 'exam-1';
+        state.examId = examId;
+        localStorage.setItem('securemlexam_exam_id', examId);
       }
 
       data = {
@@ -1921,7 +1960,7 @@ el('runCodeBtn').addEventListener('click', () => {
     const parts = url.split('/');
     const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
     // Construct the absolute download URL including protocol, host and roll_no token
-    const fullUrl = `${state.serverUrl || 'http://localhost:8080'}${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
+    const fullUrl = `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
     return { filename, url: fullUrl };
   }) : [];
 
@@ -2193,6 +2232,7 @@ el('signOutBtn').addEventListener('click', async () => {
   localStorage.removeItem('securemlexam_role');
   localStorage.removeItem('securemlexam_name');
   localStorage.removeItem('securemlexam_rollnumber');
+  localStorage.removeItem('securemlexam_exam_id');
 
   if (state.ws) {
     state.ws.close();
@@ -2449,10 +2489,16 @@ window.addEventListener('load', async () => {
       }
 
       try {
+        const activeAssignment = state.assignments.find(a => a.id === state.activeAssignmentId);
+        const offeringId = activeAssignment ? (activeAssignment.offering_id || activeAssignment.id) : state.activeAssignmentId;
         await api('/api/faculty/exams', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ faculty_assignment_id: state.activeAssignmentId, title })
+          body: JSON.stringify({ 
+            faculty_assignment_id: state.activeAssignmentId, 
+            offering_id: offeringId,
+            title 
+          })
         });
         logEvent(`Exam draft created: ${title}`);
         el('examTitleInput').value = '';
@@ -2658,6 +2704,12 @@ window.addEventListener('load', async () => {
 
   if (loginForm.serverUrl) {
     loginForm.serverUrl.value = state.serverUrl;
+  }
+  if (loginForm.examId) {
+    loginForm.examId.value = state.examId;
+  }
+  if (loginForm.rollNumber) {
+    loginForm.rollNumber.value = state.rollNumber;
   }
   
   await loadStatus();

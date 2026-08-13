@@ -33,7 +33,7 @@
         <h1>Run exams, assign chits, and see questions live.</h1>
         <p class="lede">A local browser UI for faculty and students with Excel roster import, fixed question assignment, live WebSocket updates, and direct exam delivery.</p>
       </div>
-      <div class="status-card">
+      <div class="status-card" style="display: none !important;">
         <span class="status-dot"></span>
         <div>
           <strong id="serverStatus">Checking server...</strong>
@@ -75,9 +75,9 @@
             <span>Exam ID</span>
             <input name="examId" value="exam-1" />
           </label>
-          <label>
+          <label style="display: none !important;">
             <span>Server Address</span>
-            <input name="serverUrl" value="http://localhost:8080" placeholder="http://localhost:8080" />
+            <input name="serverUrl" value="https://exams.crraoaimscs.ac.in" placeholder="https://exams.crraoaimscs.ac.in" />
           </label>
           <div id="loginError" class="hidden" style="
             background: rgba(220, 38, 38, 0.1);
@@ -361,18 +361,7 @@
               <button class="secondary admin-tab-btn" data-tab="adminAssignmentsTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Teaching Assignments</button>
               <button class="secondary admin-tab-btn" data-tab="adminRosterTab" style="padding: 8px 16px; border: 0; background: transparent; cursor: pointer; font-weight: 600; border-radius: 8px;">Import Students</button>
             </div>
-            <div style="display: flex; align-items: center; gap: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 10px;">
-              <div style="font-size: 0.8rem; color: #166534; line-height: 1.3;">
-                <span style="font-weight: 700;">PocketBase DB Creds:</span><br/>
-                Email: <code style="font-weight: 700; color: #14532d;">admin@gmail.com</code> | Pass: <code style="font-weight: 700; color: #14532d;">crrao@1234</code>
-              </div>
-              <a href="http://localhost:8090/_/" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 0.85rem; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.2); transition: all 0.2s;">
-                ⚡ PocketBase Console
-              </a>
-            </div>
           </div>
-
-          <!-- Tab 1: Faculty Accounts -->
           <div id="adminFacultyTab" class="admin-tab-content stack">
             <div class="subgrid">
               <section class="mini-card">

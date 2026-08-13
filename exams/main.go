@@ -89,18 +89,42 @@ type subject struct {
 }
 
 type facultyAssignment struct {
-	ID        string `json:"id"`
-	FacultyID string `json:"faculty_id"`
-	SubjectID string `json:"subject_id"`
-	Year      string `json:"year"`
-	Semester  string `json:"semester"`
-	Section   string `json:"section"`
+	ID         string `json:"id"`
+	FacultyID  string `json:"faculty_id"`
+	SubjectID  string `json:"subject_id"`
+	Year       string `json:"year"`
+	Semester   string `json:"semester"`
+	Section    string `json:"section"`
+	OfferingID string `json:"offering_id"`
 }
 
 type facultyAssignmentWithSubject struct {
 	facultyAssignment
 	Subject subject `json:"subject"`
 }
+
+type offering struct {
+	ID        string `json:"id"`
+	SubjectID string `json:"subject_id"`
+	BatchID   string `json:"batch_id"`
+	Year      string `json:"year"`
+	Semester  string `json:"semester"`
+	Section   string `json:"section"`
+}
+
+type enrichedAssignment struct {
+	ID         string        `json:"id"`
+	FacultyID  string        `json:"faculty_id"`
+	OfferingID string        `json:"offering_id"`
+	Offering   offering      `json:"offering"`
+	Subject    subject       `json:"subject"`
+	Batch      *studentBatch `json:"batch,omitempty"`
+	SubjectID  string        `json:"subject_id"`
+	Year       string        `json:"year"`
+	Semester   string        `json:"semester"`
+	Section    string        `json:"section"`
+}
+
 
 type facultyLoginRequest struct {
 	Email    string `json:"email"`
@@ -522,7 +546,11 @@ func handleAdminTeachingAssignments(w http.ResponseWriter, r *http.Request, clie
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "teaching assignments fetched", Data: result.Items})
+		enriched := make([]enrichedAssignment, 0, len(result.Items))
+		for _, item := range result.Items {
+			enriched = append(enriched, enrichAssignment(client, item))
+		}
+		writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "teaching assignments fetched", Data: enriched})
 	case http.MethodPost:
 		var req createTeachingAssignmentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -674,16 +702,11 @@ func handleFacultyMe(w http.ResponseWriter, r *http.Request, client *pocketBaseC
 		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
 		return
 	}
-	assignmentsWithSubjects := make([]facultyAssignmentWithSubject, 0, len(assignments))
+	enriched := make([]enrichedAssignment, 0, len(assignments))
 	for _, assignment := range assignments {
-		var subjectRecord subject
-		if err := facultyClient.getRecord("subjects", assignment.SubjectID, &subjectRecord); err != nil {
-			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "subject for teaching assignment not found"})
-			return
-		}
-		assignmentsWithSubjects = append(assignmentsWithSubjects, facultyAssignmentWithSubject{facultyAssignment: assignment, Subject: subjectRecord})
+		enriched = append(enriched, enrichAssignment(facultyClient, assignment))
 	}
-	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "faculty profile fetched", Data: map[string]interface{}{"faculty": current, "assignments": assignmentsWithSubjects}})
+	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "faculty profile fetched", Data: map[string]interface{}{"faculty": current, "assignments": enriched}})
 }
 
 func handleFacultyExams(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
@@ -749,6 +772,48 @@ func listFacultyAssignments(client *pocketBaseClient, facultyID string) ([]facul
 	}
 	return result.Items, nil
 }
+
+func enrichAssignment(client *pocketBaseClient, assignment facultyAssignment) enrichedAssignment {
+	var sub subject
+	_ = client.getRecord("subjects", assignment.SubjectID, &sub)
+
+	var batches struct {
+		Items []studentBatch `json:"items"`
+	}
+	var batch *studentBatch
+	filter := fmt.Sprintf(`year = %q && semester = %q && section = %q`, assignment.Year, assignment.Semester, assignment.Section)
+	if err := client.listRecords("student_batches", filter, &batches); err == nil && len(batches.Items) > 0 {
+		batch = &batches.Items[0]
+	}
+
+	batchID := ""
+	if batch != nil {
+		batchID = batch.ID
+	}
+
+	off := offering{
+		ID:        assignment.ID,
+		SubjectID: assignment.SubjectID,
+		BatchID:   batchID,
+		Year:      assignment.Year,
+		Semester:  assignment.Semester,
+		Section:   assignment.Section,
+	}
+
+	return enrichedAssignment{
+		ID:         assignment.ID,
+		FacultyID:  assignment.FacultyID,
+		OfferingID: assignment.ID,
+		Offering:   off,
+		Subject:    sub,
+		Batch:      batch,
+		SubjectID:  assignment.SubjectID,
+		Year:       assignment.Year,
+		Semester:   assignment.Semester,
+		Section:    assignment.Section,
+	}
+}
+
 
 func handleFacultyExamResource(w http.ResponseWriter, r *http.Request, client *pocketBaseClient) {
 	facultyClient, current, ok := requireFaculty(w, r, client)
@@ -911,8 +976,17 @@ func handleFacultyAssignmentResource(w http.ResponseWriter, r *http.Request, cli
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "route not found"})
 		return
 	}
-	var teaching facultyAssignment
-	if err := facultyClient.getRecord("faculty_assignments", parts[0], &teaching); err != nil || teaching.FacultyID != current.ID {
+	var teaching *facultyAssignment
+	assignments, err := listFacultyAssignments(facultyClient, current.ID)
+	if err == nil {
+		for _, a := range assignments {
+			if a.ID == parts[0] || (a.OfferingID != "" && a.OfferingID == parts[0]) || enrichAssignment(facultyClient, a).OfferingID == parts[0] {
+				teaching = &a
+				break
+			}
+		}
+	}
+	if teaching == nil {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "teaching assignment not found"})
 		return
 	}
