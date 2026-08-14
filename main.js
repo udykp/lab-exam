@@ -113,6 +113,14 @@ function createWindow() {
     });
   }
 
+  // Prevent closing the window during an exam
+  mainWindow.on('close', (e) => {
+    if (mainWindow && mainWindow._examLocked) {
+      e.preventDefault();
+      console.warn('[ExamGuard] Intercepted close event. Close action blocked while exam is locked.');
+    }
+  });
+
   // Fullscreen configuration — starts windowed; locked to fullscreen once exam begins
   mainWindow.setFullScreen(false);
 

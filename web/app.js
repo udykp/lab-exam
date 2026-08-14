@@ -1,5 +1,19 @@
 const DEMO_ROLL = 'DEMO'; // Special roll number — bypasses all security restrictions
 
+// Intercept and disable dangerous keyboard shortcuts (Ctrl+W, Ctrl+Q, Ctrl+R, F5) during the exam
+window.addEventListener('keydown', (e) => {
+  if (state.role === 'student' && state.questions && state.questions.length > 0 && !state.demoMode) {
+    const key = e.key.toLowerCase();
+    const ctrlOrMeta = e.ctrlKey || e.metaKey;
+    
+    // Ctrl+W, Ctrl+Q, Ctrl+R, F5
+    if ((ctrlOrMeta && (key === 'w' || key === 'q' || key === 'r')) || e.key === 'F5') {
+      e.preventDefault();
+      console.warn(`[ExamGuard] Blocked dangerous shortcut: ${e.key}`);
+    }
+  }
+}, { capture: true });
+
 const state = {
   mode: 'student',
   token: localStorage.getItem('securemlexam_token') || '',
