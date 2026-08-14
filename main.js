@@ -398,12 +398,18 @@ ipcMain.on('lock-exam-window', () => {
     focusLockInterval = setInterval(() => {
       if (mainWindow && mainWindow._examLocked) {
         if (!mainWindow.isFocused()) {
-          console.log('[ExamGuard] Window lost focus. Reclaiming instantly...');
+          console.log('[ExamGuard] Window lost focus. Reclaiming focus...');
           mainWindow.focus();
           mainWindow.setAlwaysOnTop(true, 'screen-saver');
-          mainWindow.setKiosk(false);
-          mainWindow.setKiosk(true);
-          mainWindow.focus();
+        } else {
+          // Ensure kiosk and fullscreen mode are strictly active when focused.
+          // This ensures that the window covers the GNOME panel and dock instantly when focused back.
+          if (!mainWindow.isKiosk() || !mainWindow.isFullScreen()) {
+            console.log('[ExamGuard] Enforcing fullscreen kiosk mode...');
+            mainWindow.setFullScreen(true);
+            mainWindow.setKiosk(true);
+            mainWindow.setAlwaysOnTop(true, 'screen-saver');
+          }
         }
       }
     }, 200);
