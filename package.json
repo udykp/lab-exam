@@ -1,15 +1,37 @@
 {
-  "name": "securemlexam",
+  "name": "securelab",
+  "productName": "SecureLab",
   "version": "1.0.0",
-  "description": "Secure ML Exam Platform Desktop Client",
+  "description": "Secure Exam Platform Desktop Client",
   "main": "main.js",
   "scripts": {
-    "build:backend": "go build -C exams -o ../bin/server",
-    "start": "npm run build:backend && electron . --no-sandbox",
-    "package": "npm run build:backend && electron-builder"
+    "start": "electron . --no-sandbox",
+    "package": "electron-builder --linux deb"
   },
   "dependencies": {},
   "devDependencies": {
-    "electron": "^31.0.0"
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.securelab.app",
+    "productName": "SecureLab",
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "category": "Education",
+      "icon": "icon.png"
+    },
+    "files": [
+      "**/*",
+      "bin/**/*",
+      "web/**/*",
+      "!dist/**/*",
+      "!node_modules/**/*"
+    ]
   }
 }
