@@ -442,3 +442,8 @@ code {
   color: #ffffff;
   box-shadow: 0 4px 12px rgba(24, 24, 27, 0.15);
 }
+
+/* Wide shell styling for Faculty/Admin View */
+.shell.wide-shell {
+  width: min(1680px, calc(100% - 48px));
+}

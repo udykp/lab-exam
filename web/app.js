@@ -23,6 +23,7 @@ const state = {
   serverUrl: localStorage.getItem('securemlexam_server_url') || 'https://exams.crraoaimscs.ac.in',
   examId: localStorage.getItem('securemlexam_exam_id') || 'exam-1',
   ws: null,
+  currentClassStudents: [],
   securityArmed: false,
   demoMode: false,  // true for DEMO roll — no restrictions
   questions: [],
@@ -117,15 +118,19 @@ const renderAuthLayout = () => {
 const updateGridLayout = () => {
   const grid = el('mainGrid');
   if (!grid) return;
+  const shell = document.querySelector('.shell');
   if (!state.token) {
     grid.className = 'grid two-col auth-only';
     if (el('windowCloseBtn')) el('windowCloseBtn').classList.remove('hidden');
+    if (shell) shell.classList.remove('wide-shell');
   } else if (state.role === 'student') {
     grid.className = 'grid two-col workspace-only';
     if (el('windowCloseBtn')) el('windowCloseBtn').classList.add('hidden');
+    if (shell) shell.classList.remove('wide-shell');
   } else {
     grid.className = 'grid two-col';
     if (el('windowCloseBtn')) el('windowCloseBtn').classList.remove('hidden');
+    if (shell) shell.classList.add('wide-shell');
   }
   renderAuthLayout();
 };
@@ -913,6 +918,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }, { passive: false });
   }
+
+  // Student search/filter input handling
+  const searchInput = el('searchStudentInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      if (!state.currentClassStudents) return;
+      
+      const filtered = state.currentClassStudents.filter((std) => {
+        const nameMatch = std.name && std.name.toLowerCase().includes(query);
+        const rollMatch = std.roll_no && std.roll_no.toLowerCase().includes(query);
+        return nameMatch || rollMatch;
+      });
+      
+      renderStudentSelectDropdown(filtered);
+    });
+  }
 });
 
 const loadExamsForAssignment = async (assignmentId) => {
@@ -1138,6 +1160,16 @@ const loadExamDetails = async (examId) => {
   }
 };
 
+const renderStudentSelectDropdown = (studentsList) => {
+  const select = el('assignStudentSelect');
+  if (!select) return;
+  if (studentsList.length === 0) {
+    select.innerHTML = `<option value="">No matching students</option>`;
+  } else {
+    select.innerHTML = studentsList.map((std) => `<option value="${std.roll_no}">${std.name} (${std.roll_no})</option>`).join('');
+  }
+};
+
 const loadPaperDetails = async (paperId, examStatus) => {
   try {
     state.activePaperId = paperId;
@@ -1301,15 +1333,13 @@ const loadPaperDetails = async (paperId, examStatus) => {
 
     // Populate students dropdown for assigning set
     const studentsRes = await api(`/api/faculty/assignments/${state.activeAssignmentId}/students`);
-    const students = studentsRes.data || [];
-    const select = el('assignStudentSelect');
-    if (select) {
-      if (students.length === 0) {
-        select.innerHTML = `<option value="">No students in roster</option>`;
-      } else {
-        select.innerHTML = students.map((std) => `<option value="${std.roll_no}">${std.name} (${std.roll_no})</option>`).join('');
-      }
-    }
+    state.currentClassStudents = studentsRes.data || [];
+    
+    // Reset search query input
+    const searchInput = el('searchStudentInput');
+    if (searchInput) searchInput.value = '';
+    
+    renderStudentSelectDropdown(state.currentClassStudents);
   } catch (err) {
     alert('Failed to load paper details: ' + err.message);
   }
