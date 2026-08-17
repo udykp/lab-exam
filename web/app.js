@@ -1,8 +1,6 @@
-const DEMO_ROLL = 'DEMO'; // Special roll number — bypasses all security restrictions
-
 // Intercept and disable dangerous keyboard shortcuts (Ctrl+W, Ctrl+Q, Ctrl+R, F5) during the exam
 window.addEventListener('keydown', (e) => {
-  if (state.role === 'student' && state.questions && state.questions.length > 0 && !state.demoMode) {
+  if (state.role === 'student' && state.questions && state.questions.length > 0) {
     const key = e.key.toLowerCase();
     const ctrlOrMeta = e.ctrlKey || e.metaKey;
     
@@ -25,7 +23,6 @@ const state = {
   ws: null,
   currentClassStudents: [],
   securityArmed: false,
-  demoMode: false,  // true for DEMO roll — no restrictions
   questions: [],
   activeQuestionIndex: 0,
   drafts: {},
@@ -171,15 +168,19 @@ const setMode = (mode) => {
 
 const api = async (path, options = {}) => {
   const headers = options.headers ? { ...options.headers } : {};
-  if (state.token && !headers.Authorization) {
-    headers.Authorization = `Bearer ${state.token}`;
-  }
   const url = path.startsWith('http') ? path : `${state.serverUrl}${path}`;
-  const response = await fetch(url, { ...options, headers });
+  
+  const response = await fetch(url, { 
+    ...options, 
+    credentials: 'include',
+    headers 
+  });
+  
   const text = await response.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch (_) { data = text; }
-  if (!response.ok) {
+  
+  if (!response.ok || (data && data.success === false)) {
     const message = data?.error || data?.message || (typeof data === 'string' ? data : response.statusText);
     throw new Error(message);
   }
@@ -353,12 +354,12 @@ const loadStudentExam = async () => {
         
         // Block re-entry if the attempt is already submitted
         if (activeAtt) {
-          if (activeAtt.status === 'submitted' && !state.demoMode) {
+          if (activeAtt.status === 'submitted') {
             throw new Error('You have already submitted this exam. Access locked.');
           }
         }
 
-        examLabel.textContent = state.demoMode ? `Assigned Lab Exam [DEMO]` : `Assigned Lab Exam`;
+        examLabel.textContent = `Assigned Lab Exam`;
         if (activeAtt) {
           state.questions = activeAtt.questions.map((q) => ({
             id: q.id, // the assignment record ID
@@ -397,18 +398,7 @@ const loadStudentExam = async () => {
       console.warn('[Attempts] Failed to load server assignments:', e.message);
     }
 
-    // If we are in demoMode and have no assignments on the server, fall back to mock questions
-    if (state.demoMode && !hasRealAssignments) {
-      examLabel.textContent = 'Demo Test Environment';
-      state.questions = [
-        { id: 'demo-py',    number: 1, title: 'Python',  prompt: 'Print "Hello from Python!" and show the sum of 1 to 10.' },
-        { id: 'demo-java',  number: 2, title: 'Java',    prompt: 'Write a Java program that prints "Hello from Java!" and computes 5 factorial.' },
-        { id: 'demo-c',     number: 3, title: 'C',       prompt: 'Write a C program that prints "Hello from C!" and shows the first 5 Fibonacci numbers.' },
-        { id: 'demo-cpp',   number: 4, title: 'C++',     prompt: 'Write a C++ program that prints "Hello from C++!" and sorts an array of 5 numbers.' },
-        { id: 'demo-r',     number: 5, title: 'R',       prompt: 'Write an R script that prints "Hello from R!" and computes mean of c(1,2,3,4,5).' },
-        { id: 'demo-sql',   number: 6, title: 'MySQL',   prompt: 'Write a MySQL query: SELECT VERSION(); and SHOW DATABASES;' },
-      ];
-    } else if (!hasRealAssignments) {
+    if (!hasRealAssignments) {
       // If a regular student has no assignments, throw an error
       throw new Error('No assignments found for this roll number');
     }
@@ -568,23 +558,18 @@ const loadStudentExam = async () => {
     el('endExamBtn').classList.remove('hidden');  // show End Exam button now
 
     // Lock window into exam mode: blocks split-screen, resize, and minimize
-    // Skipped in demo mode so the tester can freely interact with the system.
-    if (window.electronAPI && !state.demoMode) {
+    if (window.electronAPI) {
       window.electronAPI.requestFullscreen(true);
       window.electronAPI.lockExamWindow();
     }
 
-    logEvent(`Loaded exam with ${state.questions.length} questions.${state.demoMode ? ' [DEMO MODE — no restrictions]' : ''}`);
+    logEvent(`Loaded exam with ${state.questions.length} questions.`);
 
-    // Arm security focus checks (skipped in demo mode)
-    if (!state.demoMode) {
-      setTimeout(() => {
-        state.securityArmed = true;
-        console.log('[ExamGuard] Security focus checks armed.');
-      }, 2000);
-    } else {
-      console.log('[ExamGuard] DEMO MODE — security checks disabled.');
-    }
+    // Arm security focus checks
+    setTimeout(() => {
+      state.securityArmed = true;
+      console.log('[ExamGuard] Security focus checks armed.');
+    }, 2000);
   } catch (error) {
     if (error.message.includes('security violation')) {
       triggerViolationShutdown('lockout', 'Student has been permanently locked out due to previous security violation.');
@@ -1549,29 +1534,8 @@ const loadAdminData = async () => {
 };
 
 const connectWebSocket = () => {
-  if (!state.token) return;
-  if (state.ws) {
-    state.ws.close();
-  }
-  const wsUrlBase = state.serverUrl.replace(/^http/, 'ws');
-  state.ws = new WebSocket(`${wsUrlBase}/api/v1/ws?token=${encodeURIComponent(state.token)}`);
-  state.ws.onopen = () => logEvent('WebSocket connected');
-  state.ws.onmessage = (event) => {
-    try {
-      const payload = JSON.parse(event.data);
-      logEvent(`${payload.type}: ${payload.subject}`);
-      if (payload.type === 'chit_assigned' && state.role === 'student') {
-        loadStudentExam().catch((error) => logEvent(error.message));
-      }
-      if (payload.type === 'chit_assigned' && state.role === 'faculty') {
-        loadFacultyData().catch((error) => logEvent(error.message));
-      }
-    } catch (error) {
-      logEvent(event.data);
-    }
-  };
-  state.ws.onclose = () => logEvent('WebSocket closed');
-  state.ws.onerror = () => logEvent('WebSocket error');
+  // Disabled as the backend has no WebSocket implementation
+  return;
 };
 
 loginForm.addEventListener('submit', async (event) => {
@@ -1616,45 +1580,34 @@ loginForm.addEventListener('submit', async (event) => {
       const rollNumber = formData.get('rollNumber');
       const name = formData.get('name');
 
-      // ── Demo Mode ──────────────────────────────────────────────────────────
-      // Roll number "DEMO" skips server assignment check and all security locks.
-      const isDemo = rollNumber.trim().toUpperCase() === DEMO_ROLL;
+      const examId = formData.get('examId') || 'exam-1';
+      state.examId = examId;
+      localStorage.setItem('securemlexam_exam_id', examId);
 
-      if (!isDemo) {
-        const examId = formData.get('examId') || 'exam-1';
-        state.examId = examId;
-        localStorage.setItem('securemlexam_exam_id', examId);
-
-        const res = await api(`/api/assignments?roll_no=${encodeURIComponent(rollNumber)}`);
-        let data = res.data;
-        let assignments = [];
-        if (data && !Array.isArray(data)) {
-          assignments = (data.assignments || []).filter(a => a.exam_id === examId);
-          if (data.attempts && data.attempts.length > 0) {
-            const hasSubmitted = data.attempts.some(att => att.exam_id === examId && att.status === 'submitted');
-            if (hasSubmitted) {
-              throw new Error('You have already submitted this exam. Access locked.');
-            }
+      const res = await api(`/api/assignments?roll_no=${encodeURIComponent(rollNumber)}`);
+      let data = res.data;
+      let assignments = [];
+      if (data && !Array.isArray(data)) {
+        assignments = (data.assignments || []).filter(a => a.exam_id === examId);
+        if (data.attempts && data.attempts.length > 0) {
+          const hasSubmitted = data.attempts.some(att => att.exam_id === examId && att.status === 'submitted');
+          if (hasSubmitted) {
+            throw new Error('You have already submitted this exam. Access locked.');
           }
-        } else {
-          assignments = (data || []).filter(a => a.exam_id === examId);
-        }
-
-        if (assignments.length === 0) {
-          throw new Error('No assignments found for this roll number and Exam ID');
         }
       } else {
-        const examId = formData.get('examId') || 'exam-1';
-        state.examId = examId;
-        localStorage.setItem('securemlexam_exam_id', examId);
+        assignments = (data || []).filter(a => a.exam_id === examId);
+      }
+
+      if (assignments.length === 0) {
+        throw new Error('No assignments found for this roll number and Exam ID');
       }
 
       data = {
         token: 'student_session',
         role: 'student',
-        name: name || (isDemo ? 'Demo Tester' : 'Student'),
-        rollNumber: rollNumber,
-        demoMode: isDemo
+        name: name || 'Student',
+        rollNumber: rollNumber
       };
     } else if (mode === 'faculty') {
       const res = await api('/api/auth/login', {
@@ -1688,7 +1641,6 @@ loginForm.addEventListener('submit', async (event) => {
     state.role  = data.role;
     state.name  = data.name || '';
     state.rollNumber = data.rollNumber || '';
-    state.demoMode = !!data.demoMode;
     localStorage.setItem('securemlexam_token', state.token);
     localStorage.setItem('securemlexam_role',  state.role);
     localStorage.setItem('securemlexam_name',  state.name);
@@ -1697,19 +1649,10 @@ loginForm.addEventListener('submit', async (event) => {
     setMode(state.role);
     updateGridLayout();
     connectWebSocket();
-    logEvent(`Signed in as ${state.name || state.role}${state.demoMode ? ' [DEMO MODE]' : ''}`);
-
-    if (state.demoMode) {
-      // Show a visible banner so tester knows restrictions are off
-      const banner = document.createElement('div');
-      banner.id = 'demoBanner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99998;background:#f59e0b;color:#000;text-align:center;font-weight:700;font-size:0.9rem;padding:6px;letter-spacing:0.05em;';
-      banner.textContent = '⚠️  DEMO MODE — Security restrictions disabled. For testing only.';
-      document.body.prepend(banner);
-    }
+    logEvent(`Signed in as ${state.name || state.role}`);
 
     if (state.role === 'student') {
-      if (window.electronAPI && !state.demoMode) window.electronAPI.requestFullscreen(true);
+      if (window.electronAPI) window.electronAPI.requestFullscreen(true);
       await loadStudentExam();
     } else if (state.role === 'faculty') {
       if (window.electronAPI) window.electronAPI.requestFullscreen(false);
@@ -2147,11 +2090,11 @@ const triggerViolationShutdown = async (kind, details) => {
 };
 
 // Disable context menu
-window.addEventListener('contextmenu', (e) => { if (state.role === 'student' && !state.demoMode) e.preventDefault(); });
+window.addEventListener('contextmenu', (e) => { if (state.role === 'student') e.preventDefault(); });
 
 // Block Copy, Cut, and Paste actions silently (no exam termination, just prevention)
 const blockClipboard = (e) => {
-  if (state.role === 'student' && state.token && !state.demoMode) {
+  if (state.role === 'student' && state.token) {
     e.preventDefault();
     logEvent(`⚠️ Clipboard ${e.type} blocked.`);
   }

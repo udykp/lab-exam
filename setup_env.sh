@@ -14,10 +14,13 @@ echo "Installing compilers, runtimes, and databases..."
 sudo apt-get install -y \
   python3 \
   python3-pip \
+  python3-pandas \
+  python3-openpyxl \
   gcc \
   g++ \
   default-jdk \
   r-base \
+  r-cran-plotrix \
   mysql-server \
   mysql-client
 

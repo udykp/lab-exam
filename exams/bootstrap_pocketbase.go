@@ -156,6 +156,11 @@ func (c *bootstrapConfig) bootstrapCollections() error {
 				{Name: "code", Type: "text", Required: true, Unique: true},
 				{Name: "name", Type: "text", Required: true},
 			},
+			ListRule:   &textRule,
+			ViewRule:   &textRule,
+			CreateRule: &textRule,
+			UpdateRule: &textRule,
+			DeleteRule: &textRule,
 		},
 		{
 			Name: "faculty_assignments",
@@ -167,6 +172,11 @@ func (c *bootstrapConfig) bootstrapCollections() error {
 				{Name: "semester", Type: "text", Required: true},
 				{Name: "section", Type: "text", Required: true},
 			},
+			ListRule:   &textRule,
+			ViewRule:   &textRule,
+			CreateRule: &textRule,
+			UpdateRule: &textRule,
+			DeleteRule: &textRule,
 		},
 		{
 			Name: "exams",

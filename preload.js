@@ -16,8 +16,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exitApp: () => {
     ipcRenderer.send('exit-app');
   },
-  saveLocalFile: (folderName, fileName, content) => {
-    return ipcRenderer.invoke('save-local-file', folderName, fileName, content);
+  minimizeApp: () => {
+    ipcRenderer.send('minimize-app');
+  },
+  saveLocalFile: (folderName, fileName, content, encoding = 'utf8') => {
+    return ipcRenderer.invoke('save-local-file', folderName, fileName, content, encoding);
   },
   // Local code execution
   runCode: (code, language, attachments = []) => {

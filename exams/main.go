@@ -693,18 +693,18 @@ func handleFacultyMe(w http.ResponseWriter, r *http.Request, client *pocketBaseC
 		writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
 		return
 	}
-	facultyClient, current, ok := requireFaculty(w, r, client)
+	_, current, ok := requireFaculty(w, r, client)
 	if !ok {
 		return
 	}
-	assignments, err := listFacultyAssignments(facultyClient, current.ID)
+	assignments, err := listFacultyAssignments(client, current.ID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
 		return
 	}
 	enriched := make([]enrichedAssignment, 0, len(assignments))
 	for _, assignment := range assignments {
-		enriched = append(enriched, enrichAssignment(facultyClient, assignment))
+		enriched = append(enriched, enrichAssignment(client, assignment))
 	}
 	writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "faculty profile fetched", Data: map[string]interface{}{"faculty": current, "assignments": enriched}})
 }
@@ -735,12 +735,12 @@ func handleFacultyExams(w http.ResponseWriter, r *http.Request, client *pocketBa
 			return
 		}
 		var assignment facultyAssignment
-		if err := facultyClient.getRecord("faculty_assignments", req.FacultyAssignmentID, &assignment); err != nil || assignment.FacultyID != current.ID {
+		if err := client.getRecord("faculty_assignments", req.FacultyAssignmentID, &assignment); err != nil || assignment.FacultyID != current.ID {
 			writeJSON(w, http.StatusForbidden, apiResponse{Success: false, Message: "teaching assignment is not available to this faculty"})
 			return
 		}
 		var subjectRecord subject
-		if err := facultyClient.getRecord("subjects", assignment.SubjectID, &subjectRecord); err != nil {
+		if err := client.getRecord("subjects", assignment.SubjectID, &subjectRecord); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "subject for teaching assignment not found"})
 			return
 		}
@@ -977,10 +977,10 @@ func handleFacultyAssignmentResource(w http.ResponseWriter, r *http.Request, cli
 		return
 	}
 	var teaching *facultyAssignment
-	assignments, err := listFacultyAssignments(facultyClient, current.ID)
+	assignments, err := listFacultyAssignments(client, current.ID)
 	if err == nil {
 		for _, a := range assignments {
-			if a.ID == parts[0] || (a.OfferingID != "" && a.OfferingID == parts[0]) || enrichAssignment(facultyClient, a).OfferingID == parts[0] {
+			if a.ID == parts[0] || (a.OfferingID != "" && a.OfferingID == parts[0]) || enrichAssignment(client, a).OfferingID == parts[0] {
 				teaching = &a
 				break
 			}

@@ -82,10 +82,13 @@ function createWindow() {
 
   mainWindow.webContents.session.clearCache();
 
-  // Target server URL (remote server or local Go server)
   const targetServerUrl = remoteServerUrl || 'http://localhost:8080';
+  const isDemo = process.argv.includes('--demo') || process.argv.includes('demo');
   
-  if (remoteServerUrl) {
+  if (isDemo) {
+    console.log('[Demo Mode] Loading local demo.html directly from CLI argument.');
+    mainWindow.loadFile(path.join(__dirname, 'web', 'demo.html'));
+  } else if (remoteServerUrl) {
     console.log(`Connecting directly to remote server: ${remoteServerUrl}`);
     mainWindow.loadURL(remoteServerUrl);
   } else {
@@ -179,7 +182,15 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (!mainWindow._examLocked) return; // only enforce during active exam
+    if (!mainWindow._examLocked) {
+      // Allow switching to demo mode via Ctrl+Shift+D when not locked in an active exam
+      if (input.control && input.shift && input.key.toLowerCase() === 'd') {
+        event.preventDefault();
+        console.log('[Demo Mode] Loading local demo.html via Ctrl+Shift+D shortcut.');
+        mainWindow.loadFile(path.join(__dirname, 'web', 'demo.html'));
+      }
+      return;
+    }
 
     const key = input.key.toLowerCase();
     const isMetaModifier = input.meta || input.key === 'Meta' || input.key === 'Super' || input.key === 'OS';
@@ -448,7 +459,7 @@ ipcMain.on('unlock-exam-window', () => {
 });
 
 // IPC Handler to save code locally on the student's Desktop
-ipcMain.handle('save-local-file', async (event, folderName, fileName, content) => {
+ipcMain.handle('save-local-file', async (event, folderName, fileName, content, encoding = 'utf8') => {
   try {
     const desktopPath = app.getPath('desktop');
     const studentFolder = path.join(desktopPath, folderName);
@@ -456,7 +467,11 @@ ipcMain.handle('save-local-file', async (event, folderName, fileName, content) =
       fs.mkdirSync(studentFolder, { recursive: true });
     }
     const filePath = path.join(studentFolder, fileName);
-    fs.writeFileSync(filePath, content, 'utf8');
+    if (encoding === 'base64') {
+      fs.writeFileSync(filePath, Buffer.from(content, 'base64'));
+    } else {
+      fs.writeFileSync(filePath, content, 'utf8');
+    }
     console.log(`[ExamGuard] File successfully saved locally: ${filePath}`);
     return { success: true, path: filePath };
   } catch (err) {
@@ -519,17 +534,24 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
         if (isImage) continue; // Skip images - they don't need to be read by scripts
 
         try {
-          sendOutput(event, `Downloading dataset: ${att.filename}...\n`);
-          const response = await fetch(att.url);
-          if (!response.ok) {
-            throw new Error(`HTTP status ${response.status}`);
+          if (att.isLocal && att.content) {
+            sendOutput(event, `Writing local dataset: ${att.filename}...\n`);
+            const buffer = Buffer.from(att.content, 'base64');
+            fs.writeFileSync(path.join(runDir, att.filename), buffer);
+            sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
+          } else {
+            sendOutput(event, `Downloading dataset: ${att.filename}...\n`);
+            const response = await fetch(att.url);
+            if (!response.ok) {
+              throw new Error(`HTTP status ${response.status}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            fs.writeFileSync(path.join(runDir, att.filename), buffer);
+            sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
           }
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          fs.writeFileSync(path.join(runDir, att.filename), buffer);
-          sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
         } catch (err) {
-          sendOutput(event, `Warning: failed to download data file ${att.filename}: ${err.message}\n`, 'stderr');
+          sendOutput(event, `Warning: failed to load data file ${att.filename}: ${err.message}\n`, 'stderr');
         }
       }
     }
@@ -614,9 +636,39 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
     exitCode = 1;
   }
 
+  // Look for generated files (png, jpg, jpeg, gif, webp, pdf) before cleanup
+  const generatedFiles = [];
+  try {
+    if (fs.existsSync(runDir)) {
+      const files = fs.readdirSync(runDir);
+      const sourceFiles = ['solution.py', 'solution.R', 'solution.c', 'solution.cpp', 'solution.out', 'solution.java', 'solution.class', 'solution.sql'];
+      const attachmentNames = attachments ? attachments.map(a => a.filename) : [];
+      
+      for (const file of files) {
+        if (sourceFiles.includes(file) || attachmentNames.includes(file)) continue;
+        
+        const filePath = path.join(runDir, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isFile()) {
+          const lower = file.toLowerCase();
+          if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.pdf')) {
+            const content = fs.readFileSync(filePath).toString('base64');
+            generatedFiles.push({
+              filename: file,
+              content: content,
+              type: lower.endsWith('.pdf') ? 'application/pdf' : `image/${lower.split('.').pop()}`
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to read runDir files:', err);
+  }
+
   // Cleanup run directory recursively
   try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
-  event.sender.send('code-exit', { exitCode });
+  event.sender.send('code-exit', { exitCode, generatedFiles });
 });
 
 ipcMain.on('stop-code', (event) => {
@@ -637,6 +689,12 @@ ipcMain.on('code-stdin', (event, text) => {
   }
 });
 
+
+ipcMain.on('minimize-app', () => {
+  if (mainWindow) {
+    mainWindow.minimize();
+  }
+});
 
 // Exit exam - called after student voluntarily ends or is terminated
 // Since the app can run as root, app.quit() has full OS privileges to

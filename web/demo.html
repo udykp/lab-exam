@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SecureLab — Demo Mode</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Custom styling for demo question builder in demo mode */
+    #demoQuestionBuilder {
+      background: var(--bg-2);
+      border: 1.5px dashed var(--panel-border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    #demoWindowControls button:hover {
+      background: rgba(0, 0, 0, 0.15) !important;
+    }
+    #demoWindowControls button#demoCloseBtn:hover {
+      background: #dc2626 !important;
+      color: #fff !important;
+    }
+  </style>
+  <script src="demo.js" defer></script>
+</head>
+<body style="padding-top: 40px; background: var(--bg-1);">
+
+  <!-- Demo Banner -->
+  <div id="demoBanner" style="position:fixed;top:0;left:0;right:0;z-index:99998;background:#f59e0b;color:#000;text-align:center;font-weight:700;font-size:0.9rem;padding:6px;letter-spacing:0.05em;">
+    ⚠️  DEMO MODE — Security restrictions disabled. For testing only.
+  </div>
+
+  <!-- Window Controls for Frameless Demo Mode -->
+  <div id="demoWindowControls" style="position:fixed;top:4px;right:12px;z-index:99999;display:flex;gap:8px;align-items:center;">
+    <button id="demoMinimizeBtn" title="Minimize" style="background:rgba(255,255,255,0.25);color:#000;border:none;border-radius:4px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;cursor:pointer;font-weight:bold;transition:all 0.2s;">🗕</button>
+    <button id="demoFullscreenBtn" title="Toggle Fullscreen" style="background:rgba(255,255,255,0.25);color:#000;border:none;border-radius:4px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;cursor:pointer;font-weight:bold;transition:all 0.2s;">⛶</button>
+    <button id="demoCloseBtn" title="Close Application" style="background:#ef4444;color:#fff;border:none;border-radius:4px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;cursor:pointer;font-weight:bold;transition:all 0.2s;">✕</button>
+  </div>
+
+  <div class="shell" style="max-width: 1200px; margin: 0 auto; padding: 24px;">
+    
+    <header style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h1 style="margin: 0; color: var(--text-main);">Demo Test Environment</h1>
+        <p style="margin: 4px 0 0 0; color: var(--text-muted); font-size: 0.9rem;">Design and test program questions locally before putting them on the server.</p>
+      </div>
+      <button id="exitDemoBtn" class="secondary" type="button" style="font-weight: 700; padding: 8px 16px;">Exit Demo</button>
+    </header>
+
+    <!-- DEMO Mode Question Builder Panel -->
+    <div id="demoQuestionBuilder" class="panel">
+      <h3 style="margin-top: 0; color: var(--text-main); font-size: 1.2rem; display: flex; align-items: center; gap: 8px;">
+        📝 Configure Program Question
+      </h3>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: -6px; margin-bottom: 16px;">
+        Select a program tab below, then use this form to customize its title, prompt, and local files.
+      </p>
+      <div style="display: grid; grid-template-columns: 1fr; gap: 16px;">
+        <label>
+          <span style="font-weight: bold; font-size: 0.85rem;">Program Title</span>
+          <input id="demoQTitle" type="text" placeholder="e.g. Data Analysis" style="width: 100%;" />
+        </label>
+        <label>
+          <span style="font-weight: bold; font-size: 0.85rem;">Problem Description / Prompt</span>
+          <textarea id="demoQPrompt" rows="4" placeholder="e.g. Read the attached CSV file and print the mean value..." style="width: 100%; font-family: sans-serif;"></textarea>
+        </label>
+        <label>
+          <span style="font-weight: bold; font-size: 0.85rem;">Attach Local Files (CSV, Images, PDF, etc.)</span>
+          <input id="demoQFiles" type="file" multiple style="width: 100%; border: 1.5px solid var(--border); padding: 8px; border-radius: var(--radius);" />
+        </label>
+        <div>
+          <button id="applyDemoQBtn" class="primary" type="button" style="font-weight: 700; min-width: 200px;">Apply to Active Tab</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Student tabs bar -->
+    <div id="studentTabs" style="display: flex; gap: 12px; margin-bottom: 1rem; border-bottom: 2px solid #e4e4e7; padding-bottom: 8px;"></div>
+
+    <!-- Active Question card -->
+    <div id="activeQuestionCard" class="question-card hidden" style="background: #ffffff !important; border: 1px solid #e4e4e7 !important; border-radius: 16px; padding: 24px; margin-bottom: 20px;">
+      <div class="question-meta">
+        <span id="examLabel" style="color: #71717a;">Demo Test Environment</span>
+        <span id="questionLabel" style="color: #71717a;">Question 1</span>
+      </div>
+      <h3 id="questionTitle" style="color: #18181b; font-size: 1.5rem; margin: 6px 0;">Loading...</h3>
+      <p id="questionPrompt" style="color: #52525b; line-height: 1.6; margin-bottom: 0;">Your question prompt will appear here.</p>
+      <div id="studentAttachments" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;"></div>
+    </div>
+
+    <!-- Editor and console area -->
+    <div id="editorArea" class="stack hidden">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px;">
+        <label style="color: #27272a; margin: 0; flex: 1;">
+          <span>Select Language</span>
+          <select id="languageSelect" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; padding: 8px 12px; font-weight: 600; color: #18181b;">
+            <option value="python">Python 3</option>
+            <option value="c">C (GCC)</option>
+            <option value="cpp">C++ (G++)</option>
+            <option value="java">Java (OpenJDK)</option>
+            <option value="r">R Language</option>
+            <option value="mysql">MySQL Database</option>
+          </select>
+        </label>
+      </div>
+
+      <label style="color: #27272a;">
+        <span>Code</span>
+        <textarea id="codeEditor" placeholder="Write your solution here..." style="background: #ffffff !important; color: #18181b !important; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; font-family: monospace; font-size: 0.95rem; line-height: 1.5; padding: 16px; min-height: 250px;"></textarea>
+      </label>
+
+      <div class="actions-row">
+        <button id="runCodeBtn" class="primary" type="button" style="background: #10b981 !important; color: #ffffff !important; border: none; border-radius: 10px; font-weight: 700;">Run Code</button>
+        <button id="submitBtn" class="primary" type="button" style="background: #27272a !important; color: #ffffff !important; border: none; border-radius: 10px; font-weight: 700;">Submit Solution</button>
+        <button id="saveLocalBtn" class="secondary" type="button" style="background: #ffffff !important; color: #18181b !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; font-weight: 700;">💾 Save locally</button>
+      </div>
+
+      <!-- Terminal Output Console -->
+      <div id="codeTerminal" class="console" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; overflow: hidden; margin-top: 20px;">
+        <div class="console-head" style="display: flex; justify-content: space-between; align-items: center; background: #f4f4f5; padding: 12px 16px; border-bottom: 1px solid #e4e4e7; color: #27272a; font-weight: 600;">
+          <span>Terminal Output</span>
+          <button id="clearTerminalBtn" style="background: transparent; color: #71717a; border: 0; padding: 0; font-size: 0.8rem; cursor: pointer;" type="button">Clear</button>
+        </div>
+        <div id="terminalOutputContainer" class="console-body" style="background: #18181b !important; color: #10b981 !important; font-family: monospace; min-height: 180px; max-height: 400px; font-size: 0.95rem; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; cursor: text;">
+          <pre id="terminalOutput" style="flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; font-family: inherit; border: none; background: transparent; padding: 0;">Terminal ready. Write code and click Run Code.</pre>
+          <div id="terminalInputRow" class="hidden" style="display: flex; align-items: center; gap: 8px; color: #ffffff; margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">
+            <span style="color: #10b981; font-weight: bold;">$</span>
+            <input id="terminalInput" type="text" style="flex: 1; background: transparent; border: none; outline: none; color: #ffffff; font-family: monospace; font-size: 0.95rem; padding: 0; box-shadow: none !important;" placeholder="Type input here and press Enter..." autocomplete="off" />
+          </div>
+        </div>
+        <div id="terminalOutputs" class="hidden" style="background: #f8fafc; border-top: 1px solid #e4e4e7; padding: 16px;">
+          <h4 style="color: #18181b; margin: 0 0 12px 0; font-size: 0.95rem; font-weight: 600; font-family: sans-serif;">Generated Outputs / Plots</h4>
+          <div id="outputsContainer" style="display: flex; flex-direction: column; gap: 16px;"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Lightbox Image Viewer -->
+  <div id="imageLightboxModal" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.96); z-index: 100002; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(12px);">
+    <div style="position: absolute; top: 24px; right: 24px; display: flex; gap: 12px; z-index: 100003;">
+      <a id="lightboxDownloadBtn" href="#" download style="background: rgba(255,255,255,0.1); color: #fff; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-family: sans-serif; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.2);">Download</a>
+      <button id="closeLightboxBtn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 8px 16px; font-weight: 700; cursor: pointer;">Close</button>
+    </div>
+    <img id="lightboxImage" src="" alt="Zoomed view" style="max-width: 90%; max-height: 80%; object-fit: contain; border-radius: 8px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);" />
+  </div>
+
+</body>
+</html>
