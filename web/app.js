@@ -1998,6 +1998,59 @@ el('runCodeBtn').addEventListener('click', () => {
         term.style.color = '#f87171';
       }
     }
+
+    if (data.generatedFiles && data.generatedFiles.length > 0) {
+      const outputsDiv = el('terminalOutputs');
+      const container = el('outputsContainer');
+      if (outputsDiv && container) {
+        container.innerHTML = '';
+        data.generatedFiles.forEach(file => {
+          const wrapper = document.createElement('div');
+          wrapper.style.background = '#27272a';
+          wrapper.style.padding = '16px';
+          wrapper.style.borderRadius = '10px';
+          wrapper.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+          wrapper.style.display = 'flex';
+          wrapper.style.flexDirection = 'column';
+          wrapper.style.gap = '8px';
+          wrapper.style.width = '100%';
+          wrapper.style.boxSizing = 'border-box';
+
+          const title = document.createElement('span');
+          title.textContent = `📊 ${file.filename}`;
+          title.style.color = '#ffffff';
+          title.style.fontWeight = 'bold';
+          title.style.fontSize = '0.9rem';
+          title.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+          wrapper.appendChild(title);
+
+          if (file.type === 'application/pdf') {
+            const embed = document.createElement('embed');
+            embed.src = `data:application/pdf;base64,${file.content}`;
+            embed.type = 'application/pdf';
+            embed.style.width = '100%';
+            embed.style.height = '500px';
+            embed.style.borderRadius = '6px';
+            embed.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+            wrapper.appendChild(embed);
+          } else {
+            const img = document.createElement('img');
+            img.src = `data:${file.type};base64,${file.content}`;
+            img.style.maxWidth = '100%';
+            img.style.maxHeight = '550px';
+            img.style.objectFit = 'contain';
+            img.style.borderRadius = '6px';
+            img.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+            img.style.cursor = 'zoom-in';
+            img.addEventListener('click', () => openImageLightbox(img.src));
+            wrapper.appendChild(img);
+          }
+          container.appendChild(wrapper);
+        });
+        outputsDiv.classList.remove('hidden');
+      }
+    }
+
     el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
     cleanupRunState();
   });
