@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SecureMLExam</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" data-name="vs/editor/editor.main" href="vs/editor/editor.main.css" />
+  <script src="vs/loader.js"></script>
+  <script>
+    require.config({ paths: { 'vs': 'vs' } });
+  </script>
 </head>
 <body>
   <!-- Frameless Window Close Button (Active only on login screen) -->
@@ -91,14 +96,6 @@
           <button id="loginSubmitBtn" class="primary" type="submit">Sign in</button>
         </form>
 
-        <!-- Sign Out Area -->
-        <div id="signOutArea" class="stack hidden" style="margin-top: 1.5rem;">
-          <div style="font-size: 1.05rem; margin-bottom: 0.5rem; text-align: center;">
-            Signed in as <strong id="loggedInUser">Faculty</strong>
-          </div>
-          <button id="signOutBtn" class="secondary" type="button">Sign Out</button>
-        </div>
-
         <div id="debugActionsRow" class="actions-row">
           <button id="connectWsBtn" class="secondary" type="button">Connect WebSocket</button>
           <button id="refreshBtn" class="secondary" type="button">Refresh Current View</button>
@@ -117,6 +114,10 @@
           <div>
             <h2 id="workspaceTitle">Student Workspace</h2>
             <p id="workspaceHint">Login as a student to load your assigned question.</p>
+          </div>
+          <div id="facultyUserBadge" class="hidden" style="display: flex; align-items: center; gap: 12px; flex-shrink: 0; background: #ffffff; padding: 6px 12px; border-radius: 10px; border: 1.5px solid #e4e4e7; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <span style="font-size: 0.85rem; color: #71717a; font-weight: 600;">Signed in as <strong id="loggedInUser" style="color: #18181b;">Faculty</strong></span>
+            <button id="signOutBtn" class="secondary" type="button" style="padding: 6px 12px; font-size: 0.8rem; font-weight: 700; border-radius: 8px; background: #f4f4f5; border: 1px solid #e4e4e7; color: #18181b; cursor: pointer; transition: all 0.2s ease;" onmouseover="this.style.background='#e4e4e7'" onmouseout="this.style.background='#f4f4f5'">Sign Out</button>
           </div>
           <button id="endExamBtn" class="hidden" type="button" style="
             flex-shrink: 0;
@@ -186,10 +187,12 @@
               </label>
             </div>
 
-            <label style="color: #27272a;">
+            <div style="color: #27272a; display: flex; flex-direction: column; gap: 8px;">
               <span>Code</span>
-              <textarea id="codeEditor" placeholder="Write your solution here..." style="background: #ffffff !important; color: #18181b !important; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; font-family: monospace; font-size: 0.95rem; line-height: 1.5; padding: 16px;"></textarea>
-            </label>
+              <div style="height: 400px; min-height: 200px; resize: vertical; overflow: hidden; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; background: #ffffff;">
+                <div id="codeEditor" style="height: 100%; width: 100%;"></div>
+              </div>
+            </div>
 
             <div class="actions-row">
               <button id="runCodeBtn" class="primary" type="button" style="background: #10b981 !important; color: #ffffff !important; border: none; border-radius: 10px; font-weight: 700;">Run Code</button>
@@ -203,7 +206,7 @@
                 <span>Terminal Output</span>
                 <button id="clearTerminalBtn" style="background: transparent; color: #71717a; border: 0; padding: 0; font-size: 0.8rem; cursor: pointer;" type="button">Clear</button>
               </div>
-              <div id="terminalOutputContainer" class="console-body" style="background: #18181b !important; color: #10b981 !important; font-family: monospace; min-height: 180px; max-height: 400px; font-size: 0.95rem; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; cursor: text;">
+              <div id="terminalOutputContainer" class="console-body" style="background: #18181b !important; color: #10b981 !important; font-family: monospace; min-height: 180px; height: 220px; resize: vertical; overflow: auto; font-size: 0.95rem; padding: 16px; display: flex; flex-direction: column; cursor: text;">
                 <pre id="terminalOutput" style="flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; font-family: inherit; border: none; background: transparent; padding: 0;">Terminal ready. Write code and click Run Code.</pre>
                 <div id="terminalInputRow" class="hidden" style="display: flex; align-items: center; gap: 8px; color: #ffffff; margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">
                   <span style="color: #10b981; font-weight: bold;">$</span>

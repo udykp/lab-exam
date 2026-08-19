@@ -41,5 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   sendStdin: (text) => {
     ipcRenderer.send('code-stdin', text);
+  },
+  getServerUrl: () => {
+    return ipcRenderer.invoke('get-server-url');
   }
 });

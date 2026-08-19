@@ -77,43 +77,20 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false,
     },
   });
 
   mainWindow.webContents.session.clearCache();
 
-  const targetServerUrl = remoteServerUrl || 'http://localhost:8080';
   const isDemo = process.argv.includes('--demo') || process.argv.includes('demo');
   
   if (isDemo) {
     console.log('[Demo Mode] Loading local demo.html directly from CLI argument.');
     mainWindow.loadFile(path.join(__dirname, 'web', 'demo.html'));
-  } else if (remoteServerUrl) {
-    console.log(`Connecting directly to remote server: ${remoteServerUrl}`);
-    mainWindow.loadURL(remoteServerUrl);
   } else {
-    // Poll local server until it responds, then load URL
-    const checkInterval = setInterval(() => {
-      http.get(`${targetServerUrl}/health`, (res) => {
-        if (res.statusCode === 200) {
-          clearInterval(checkInterval);
-          mainWindow.loadURL(targetServerUrl);
-        }
-      }).on('error', () => {
-        console.log('Waiting for Go server to start...');
-      });
-    }, 200);
-
-    // If server takes too long (e.g. 10s), fallback to loading index.html file directly
-    const timeout = setTimeout(() => {
-      clearInterval(checkInterval);
-      console.warn('Go server timeout, loading HTML directly.');
-      mainWindow.loadFile(path.join(__dirname, 'web', 'index.html'));
-    }, 10000);
-
-    mainWindow.on('ready-to-show', () => {
-      clearTimeout(timeout);
-    });
+    console.log('Loading local student workspace (index.html)...');
+    mainWindow.loadFile(path.join(__dirname, 'web', 'index.html'));
   }
 
   // Prevent closing the window during an exam
@@ -500,12 +477,63 @@ function spawnAndStream(event, cmd, args, opts = {}) {
   const proc = spawn(cmd, args, { env: process.env, ...opts });
   runningProcess = proc;
 
-  proc.stdout.on('data', (d) => sendOutput(event, d.toString(), 'stdout'));
-  proc.stderr.on('data', (d) => sendOutput(event, d.toString(), 'stderr'));
+  let totalOutputLength = 0;
+  const maxOutputLength = 100000; // 100 KB limit
+  let killed = false;
+
+  // Enforce a hard timeout of 30 seconds
+  const timeoutId = setTimeout(() => {
+    if (runningProcess === proc) {
+      killed = true;
+      sendOutput(event, '\n\n[Execution Timed Out after 30 seconds]\n', 'stderr');
+      try {
+        proc.kill('SIGKILL');
+      } catch (_) {}
+    }
+  }, 30000);
+
+  proc.stdout.on('data', (d) => {
+    if (killed) return;
+    const str = d.toString();
+    totalOutputLength += str.length;
+    if (totalOutputLength > maxOutputLength) {
+      killed = true;
+      sendOutput(event, '\n\n[Output limit exceeded. Process terminated.]\n', 'stderr');
+      try {
+        proc.kill('SIGKILL');
+      } catch (_) {}
+      return;
+    }
+    sendOutput(event, str, 'stdout');
+  });
+
+  proc.stderr.on('data', (d) => {
+    if (killed) return;
+    const str = d.toString();
+    totalOutputLength += str.length;
+    if (totalOutputLength > maxOutputLength) {
+      killed = true;
+      sendOutput(event, '\n\n[Output limit exceeded. Process terminated.]\n', 'stderr');
+      try {
+        proc.kill('SIGKILL');
+      } catch (_) {}
+      return;
+    }
+    sendOutput(event, str, 'stderr');
+  });
 
   return new Promise((resolve) => {
-    proc.on('close', (code) => { runningProcess = null; resolve(code); });
-    proc.on('error', (err) => { runningProcess = null; resolve(1); sendOutput(event, err.message, 'stderr'); });
+    proc.on('close', (code) => {
+      clearTimeout(timeoutId);
+      runningProcess = null;
+      resolve(code);
+    });
+    proc.on('error', (err) => {
+      clearTimeout(timeoutId);
+      runningProcess = null;
+      resolve(1);
+      sendOutput(event, err.message, 'stderr');
+    });
   });
 }
 
@@ -687,6 +715,11 @@ ipcMain.on('code-stdin', (event, text) => {
       runningProcess.stdin.write(text + '\n');
     } catch (_) {}
   }
+});
+
+
+ipcMain.handle('get-server-url', () => {
+  return remoteServerUrl || 'http://localhost:8080';
 });
 
 

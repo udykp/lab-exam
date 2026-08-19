@@ -31,6 +31,14 @@ const state = {
 
 const el = (id) => document.getElementById(id);
 
+const cleanAttachmentFilename = (filename) => {
+  const match = filename.match(/^(.+?)_[a-z0-9]{10}_[a-z0-9]{10}\.([a-zA-Z0-9]+)$/i);
+  if (match) {
+    return `${match[1]}.${match[2]}`;
+  }
+  return filename;
+};
+
 const loginForm = el('loginForm');
 const studentView = el('studentView');
 const facultyView = el('facultyView');
@@ -46,47 +54,82 @@ const examLabel = el('examLabel');
 const questionLabel = el('questionLabel');
 const questionTitle = el('questionTitle');
 const questionPrompt = el('questionPrompt');
-const codeEditor = el('codeEditor');
+let monacoEditorInstance = null;
+let pendingEditorValue = '';
 
-if (codeEditor) {
-  codeEditor.addEventListener('keydown', (e) => {
-    const start = codeEditor.selectionStart;
-    const end = codeEditor.selectionEnd;
-    const value = codeEditor.value;
+function getEditorValue() {
+  if (monacoEditorInstance) {
+    return monacoEditorInstance.getValue();
+  }
+  return pendingEditorValue;
+}
 
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      codeEditor.value = value.substring(0, start) + '    ' + value.substring(end);
-      codeEditor.selectionStart = codeEditor.selectionEnd = start + 4;
-      return;
+function setEditorValue(val) {
+  if (monacoEditorInstance) {
+    monacoEditorInstance.setValue(val || '');
+  } else {
+    pendingEditorValue = val || '';
+  }
+}
+
+function setEditorLanguage(lang) {
+  if (monacoEditorInstance) {
+    const model = monacoEditorInstance.getModel();
+    if (model) {
+      let monacoLang = lang;
+      if (lang === 'cpp') monacoLang = 'cpp';
+      if (lang === 'c') monacoLang = 'c';
+      if (lang === 'java') monacoLang = 'java';
+      if (lang === 'r') monacoLang = 'r';
+      if (lang === 'mysql') monacoLang = 'sql';
+      monaco.editor.setModelLanguage(model, monacoLang);
     }
+  }
+}
 
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const beforeCursor = value.substring(0, start);
-      const afterCursor = value.substring(end);
-      const lines = beforeCursor.split('\n');
-      const currentLine = lines[lines.length - 1] || '';
-      
-      const match = currentLine.match(/^(\s*)/);
-      let indent = match ? match[1] : '';
-      
-      if (currentLine.trim().endsWith(':')) {
-        indent += '    ';
-      }
-      
-      const newlineWithIndent = '\n' + indent;
-      codeEditor.value = beforeCursor + newlineWithIndent + afterCursor;
-      codeEditor.selectionStart = codeEditor.selectionEnd = start + newlineWithIndent.length;
+// Initialize Monaco Editor
+if (typeof require !== 'undefined') {
+  require(['vs/editor/editor.main'], function () {
+    const container = el('codeEditor');
+    if (container) {
+      monacoEditorInstance = monaco.editor.create(container, {
+        value: pendingEditorValue || '',
+        language: 'python',
+        theme: 'vs',
+        automaticLayout: true,
+        fontSize: 14,
+        fontFamily: 'monospace',
+        minimap: { enabled: false },
+        lineNumbers: 'on',
+        bracketPairColorization: { enabled: true },
+        autoClosingBrackets: 'always',
+        autoClosingQuotes: 'always',
+        folding: true,
+      });
+
+      // Sync editor content in real-time to the current draft
+      monacoEditorInstance.onDidChangeModelContent(() => {
+        if (state.questions.length === 0) return;
+        const q = state.questions[state.activeQuestionIndex];
+        if (q && state.drafts[q.id]) {
+          state.drafts[q.id].code = monacoEditorInstance.getValue();
+        }
+      });
     }
   });
+}
 
-  // Sync editor content in real-time to the current draft
-  codeEditor.addEventListener('input', () => {
-    if (state.questions.length === 0) return;
-    const q = state.questions[state.activeQuestionIndex];
-    if (q && state.drafts[q.id]) {
-      state.drafts[q.id].code = codeEditor.value;
+// Track language selection changes
+const languageSelect = el('languageSelect');
+if (languageSelect) {
+  languageSelect.addEventListener('change', (e) => {
+    const lang = e.target.value;
+    setEditorLanguage(lang);
+    if (state.questions.length > 0) {
+      const q = state.questions[state.activeQuestionIndex];
+      if (q && state.drafts[q.id]) {
+        state.drafts[q.id].language = lang;
+      }
     }
   });
 }
@@ -95,20 +138,24 @@ const renderAuthLayout = () => {
   const isUserLoggedIn = !!state.token;
   const loginHeader = el('loginHeader');
   const loginForm = el('loginForm');
-  const signOutArea = el('signOutArea');
+  const facultyUserBadge = el('facultyUserBadge');
   const loggedInUser = el('loggedInUser');
 
   if (isUserLoggedIn) {
     if (loginHeader) loginHeader.classList.add('hidden');
     if (loginForm) loginForm.classList.add('hidden');
-    if (signOutArea) signOutArea.classList.remove('hidden');
-    if (loggedInUser) {
-      loggedInUser.textContent = state.name || state.role;
+    if (state.role !== 'student') {
+      if (facultyUserBadge) facultyUserBadge.classList.remove('hidden');
+      if (loggedInUser) {
+        loggedInUser.textContent = state.name || state.role;
+      }
+    } else {
+      if (facultyUserBadge) facultyUserBadge.classList.add('hidden');
     }
   } else {
     if (loginHeader) loginHeader.classList.remove('hidden');
     if (loginForm) loginForm.classList.remove('hidden');
-    if (signOutArea) signOutArea.classList.add('hidden');
+    if (facultyUserBadge) facultyUserBadge.classList.add('hidden');
   }
 };
 
@@ -125,8 +172,9 @@ const updateGridLayout = () => {
     if (el('windowCloseBtn')) el('windowCloseBtn').classList.add('hidden');
     if (shell) shell.classList.remove('wide-shell');
   } else {
-    grid.className = 'grid two-col';
-    if (el('windowCloseBtn')) el('windowCloseBtn').classList.remove('hidden');
+    // For Faculty and Admin, use full-width workspace-only layout to eliminate empty left space
+    grid.className = 'grid two-col workspace-only';
+    if (el('windowCloseBtn')) el('windowCloseBtn').classList.add('hidden');
     if (shell) shell.classList.add('wide-shell');
   }
   renderAuthLayout();
@@ -218,7 +266,7 @@ const saveCurrentTabState = () => {
   const q = state.questions[state.activeQuestionIndex];
   if (!q) return;
   state.drafts[q.id] = {
-    code: el('codeEditor').value,
+    code: getEditorValue(),
     language: el('languageSelect').value,
     terminal: el('terminalOutput').textContent,
     terminalColor: el('terminalOutput').style.color,
@@ -241,6 +289,7 @@ const loadTabState = (index) => {
       attachDiv.innerHTML = q.attachmentUrls.map(url => {
         const parts = url.split('/');
         const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
+        const cleanName = cleanAttachmentFilename(filename);
         const fullUrl = `${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
         
         const lower = filename.toLowerCase();
@@ -249,12 +298,12 @@ const loadTabState = (index) => {
         if (isImage) {
           return `
             <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-bottom: 8px;">
-              <img class="student-attachment-image" src="${fullUrl}" alt="${filename}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1.5px solid #e4e4e7; object-fit: contain; background: #f8fafc; cursor: zoom-in;" />
+              <img class="student-attachment-image" src="${fullUrl}" alt="${cleanName}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1.5px solid #e4e4e7; object-fit: contain; background: #f8fafc; cursor: zoom-in;" />
             </div>
           `;
         }
 
-        return `<a href="${fullUrl}" target="_blank" style="font-size: 0.85rem; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">📎 ${filename}</a>`;
+        return `<a href="${fullUrl}" target="_blank" style="font-size: 0.85rem; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">📎 ${cleanName}</a>`;
       }).join('');
 
       attachDiv.querySelectorAll('.student-attachment-image').forEach(img => {
@@ -274,8 +323,9 @@ const loadTabState = (index) => {
     terminalColor: '#10b981',
   };
 
-  el('codeEditor').value = draft.code;
+  setEditorValue(draft.code);
   el('languageSelect').value = draft.language;
+  setEditorLanguage(draft.language);
   el('terminalOutput').textContent = draft.terminal;
   el('terminalOutput').style.color = draft.terminalColor;
 
@@ -292,7 +342,7 @@ const saveSingleProgramLocally = async (questionIndex) => {
   let codeContent = '';
   let language = q.language || 'python';
   if (state.activeQuestionIndex === questionIndex) {
-    codeContent = el('codeEditor').value;
+    codeContent = getEditorValue();
     language = el('languageSelect').value;
   } else {
     const draft = state.drafts[q.id];
@@ -799,7 +849,16 @@ const escapeHTML = (str) => {
 };
 
 // Bind modal close trigger and Lightbox events
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  if (window.electronAPI && window.electronAPI.getServerUrl) {
+    try {
+      state.serverUrl = await window.electronAPI.getServerUrl();
+      console.log('[SecureLab] Configured server URL:', state.serverUrl);
+    } catch (err) {
+      console.error('Failed to get server URL from electron:', err);
+    }
+  }
+
   const closeBtn = el('closeResponseModalBtn');
   if (closeBtn) {
     closeBtn.addEventListener('click', () => {
@@ -1585,18 +1644,18 @@ loginForm.addEventListener('submit', async (event) => {
       localStorage.setItem('securemlexam_exam_id', examId);
 
       const res = await api(`/api/assignments?roll_no=${encodeURIComponent(rollNumber)}`);
-      let data = res.data;
+      const resData = res.data;
       let assignments = [];
-      if (data && !Array.isArray(data)) {
-        assignments = (data.assignments || []).filter(a => a.exam_id === examId);
-        if (data.attempts && data.attempts.length > 0) {
-          const hasSubmitted = data.attempts.some(att => att.exam_id === examId && att.status === 'submitted');
+      if (resData && !Array.isArray(resData)) {
+        assignments = (resData.assignments || []).filter(a => a.exam_id === examId);
+        if (resData.attempts && resData.attempts.length > 0) {
+          const hasSubmitted = resData.attempts.some(att => att.exam_id === examId && att.status === 'submitted');
           if (hasSubmitted) {
             throw new Error('You have already submitted this exam. Access locked.');
           }
         }
       } else {
-        assignments = (data || []).filter(a => a.exam_id === examId);
+        assignments = (resData || []).filter(a => a.exam_id === examId);
       }
 
       if (assignments.length === 0) {
@@ -1712,7 +1771,7 @@ el('submitBtn').addEventListener('click', async () => {
       body: JSON.stringify({
         assignment_id: state.questionId || '',
         student_roll_no: state.rollNumber,
-        response: codeEditor.value,
+        response: getEditorValue(),
       }),
     });
     logEvent(data.status || 'submitted');
@@ -1840,7 +1899,7 @@ el('endExamConfirmBtn').addEventListener('click', async () => {
 });
 
 el('runCodeBtn').addEventListener('click', () => {
-  const code = el('codeEditor').value;
+  const code = getEditorValue();
   const term = el('terminalOutput');
   const runBtn = el('runCodeBtn');
   const lang = el('languageSelect') ? el('languageSelect').value : 'python';
@@ -1901,7 +1960,7 @@ el('runCodeBtn').addEventListener('click', () => {
     const q = state.questions[state.activeQuestionIndex];
     if (q) {
       state.drafts[q.id] = {
-        code: el('codeEditor').value,
+        code: getEditorValue(),
         language: el('languageSelect') ? el('languageSelect').value : 'python',
         terminal: term.textContent,
         terminalColor: term.style.color,
@@ -1946,9 +2005,10 @@ el('runCodeBtn').addEventListener('click', () => {
   const attachments = (q && q.attachmentUrls) ? q.attachmentUrls.map(url => {
     const parts = url.split('/');
     const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
+    const cleanName = cleanAttachmentFilename(filename);
     // Construct the absolute download URL including protocol, host and roll_no token
     const fullUrl = `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
-    return { filename, url: fullUrl };
+    return { filename: cleanName, url: fullUrl };
   }) : [];
 
   window.electronAPI.runCode(code, lang, attachments);

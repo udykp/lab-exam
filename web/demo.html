@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <title>SecureLab — Demo Mode</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" data-name="vs/editor/editor.main" href="vs/editor/editor.main.css" />
+  <script src="vs/loader.js"></script>
+  <script>
+    require.config({ paths: { 'vs': 'vs' } });
+  </script>
   <style>
     /* Custom styling for demo question builder in demo mode */
     #demoQuestionBuilder {
@@ -104,10 +109,12 @@
         </label>
       </div>
 
-      <label style="color: #27272a;">
+      <div style="color: #27272a; display: flex; flex-direction: column; gap: 8px;">
         <span>Code</span>
-        <textarea id="codeEditor" placeholder="Write your solution here..." style="background: #ffffff !important; color: #18181b !important; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; font-family: monospace; font-size: 0.95rem; line-height: 1.5; padding: 16px; min-height: 250px;"></textarea>
-      </label>
+        <div style="height: 400px; min-height: 200px; resize: vertical; overflow: hidden; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; background: #ffffff;">
+          <div id="codeEditor" style="height: 100%; width: 100%;"></div>
+        </div>
+      </div>
 
       <div class="actions-row">
         <button id="runCodeBtn" class="primary" type="button" style="background: #10b981 !important; color: #ffffff !important; border: none; border-radius: 10px; font-weight: 700;">Run Code</button>
@@ -121,7 +128,7 @@
           <span>Terminal Output</span>
           <button id="clearTerminalBtn" style="background: transparent; color: #71717a; border: 0; padding: 0; font-size: 0.8rem; cursor: pointer;" type="button">Clear</button>
         </div>
-        <div id="terminalOutputContainer" class="console-body" style="background: #18181b !important; color: #10b981 !important; font-family: monospace; min-height: 180px; max-height: 400px; font-size: 0.95rem; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; cursor: text;">
+        <div id="terminalOutputContainer" class="console-body" style="background: #18181b !important; color: #10b981 !important; font-family: monospace; min-height: 180px; height: 220px; resize: vertical; overflow: auto; font-size: 0.95rem; padding: 16px; display: flex; flex-direction: column; cursor: text;">
           <pre id="terminalOutput" style="flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; font-family: inherit; border: none; background: transparent; padding: 0;">Terminal ready. Write code and click Run Code.</pre>
           <div id="terminalInputRow" class="hidden" style="display: flex; align-items: center; gap: 8px; color: #ffffff; margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">
             <span style="color: #10b981; font-weight: bold;">$</span>

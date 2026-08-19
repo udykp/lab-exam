@@ -8,7 +8,9 @@
     "start": "electron . --no-sandbox",
     "package": "electron-builder --linux deb"
   },
-  "dependencies": {},
+  "dependencies": {
+    "monaco-editor": "^0.56.0"
+  },
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"

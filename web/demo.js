@@ -25,7 +25,7 @@ const saveCurrentTabState = () => {
   const activeQ = state.questions[state.activeQuestionIndex];
   if (activeQ) {
     state.drafts[activeQ.id] = {
-      code: el('codeEditor').value,
+      code: getEditorValue(),
       language: el('languageSelect').value,
       terminal: el('terminalOutput').textContent,
       terminalColor: el('terminalOutput').style.color,
@@ -74,8 +74,9 @@ const loadTabState = (index) => {
     terminalColor: '#10b981',
   };
 
-  el('codeEditor').value = draft.code;
+  setEditorValue(draft.code);
   el('languageSelect').value = draft.language;
+  setEditorLanguage(draft.language);
   el('terminalOutput').textContent = draft.terminal;
   el('terminalOutput').style.color = draft.terminalColor;
 
@@ -215,40 +216,81 @@ el('closeLightboxBtn').addEventListener('click', () => {
   el('lightboxImage').src = '';
 });
 
-// Configure keyboard shortcut intercept for codeEditor
-const codeEditor = el('codeEditor');
-if (codeEditor) {
-  codeEditor.addEventListener('keydown', (e) => {
-    const start = codeEditor.selectionStart;
-    const end = codeEditor.selectionEnd;
-    const value = codeEditor.value;
+let monacoEditorInstance = null;
+let pendingEditorValue = '';
 
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      codeEditor.value = value.substring(0, start) + '    ' + value.substring(end);
-      codeEditor.selectionStart = codeEditor.selectionEnd = start + 4;
+function getEditorValue() {
+  if (monacoEditorInstance) {
+    return monacoEditorInstance.getValue();
+  }
+  return pendingEditorValue;
+}
+
+function setEditorValue(val) {
+  if (monacoEditorInstance) {
+    monacoEditorInstance.setValue(val || '');
+  } else {
+    pendingEditorValue = val || '';
+  }
+}
+
+function setEditorLanguage(lang) {
+  if (monacoEditorInstance) {
+    const model = monacoEditorInstance.getModel();
+    if (model) {
+      let monacoLang = lang;
+      if (lang === 'cpp') monacoLang = 'cpp';
+      if (lang === 'c') monacoLang = 'c';
+      if (lang === 'java') monacoLang = 'java';
+      if (lang === 'r') monacoLang = 'r';
+      if (lang === 'mysql') monacoLang = 'sql';
+      monaco.editor.setModelLanguage(model, monacoLang);
     }
+  }
+}
 
-    if (e.key === 'Enter') {
-      const lines = value.substring(0, start).split('\n');
-      const currentLine = lines[lines.length - 1];
-      const match = currentLine.match(/^(\s+)/);
-      if (match) {
-        e.preventDefault();
-        const indent = match[1];
-        const beforeCursor = value.substring(0, start);
-        const afterCursor = value.substring(start);
-        const newlineWithIndent = '\n' + indent;
-        codeEditor.value = beforeCursor + newlineWithIndent + afterCursor;
-        codeEditor.selectionStart = codeEditor.selectionEnd = start + newlineWithIndent.length;
-      }
+// Initialize Monaco Editor
+if (typeof require !== 'undefined') {
+  require(['vs/editor/editor.main'], function () {
+    const container = el('codeEditor');
+    if (container) {
+      monacoEditorInstance = monaco.editor.create(container, {
+        value: pendingEditorValue || '',
+        language: 'python',
+        theme: 'vs',
+        automaticLayout: true,
+        fontSize: 14,
+        fontFamily: 'monospace',
+        minimap: { enabled: false },
+        lineNumbers: 'on',
+        bracketPairColorization: { enabled: true },
+        autoClosingBrackets: 'always',
+        autoClosingQuotes: 'always',
+        folding: true,
+      });
+
+      // Sync editor content in real-time to the current draft
+      monacoEditorInstance.onDidChangeModelContent(() => {
+        const q = state.questions[state.activeQuestionIndex];
+        if (q && state.drafts[q.id]) {
+          state.drafts[q.id].code = monacoEditorInstance.getValue();
+        }
+      });
     }
   });
+}
 
-  codeEditor.addEventListener('input', () => {
-    const q = state.questions[state.activeQuestionIndex];
-    if (q && state.drafts[q.id]) {
-      state.drafts[q.id].code = codeEditor.value;
+// Track language selection changes
+const languageSelect = el('languageSelect');
+if (languageSelect) {
+  languageSelect.addEventListener('change', (e) => {
+    const lang = e.target.value;
+    setEditorLanguage(lang);
+    if (state.questions.length > 0) {
+      const q = state.questions[state.activeQuestionIndex];
+      if (q && state.drafts[q.id]) {
+        state.drafts[q.id].language = lang;
+      }
     }
   });
 }
@@ -340,7 +382,7 @@ el('applyDemoQBtn').addEventListener('click', async () => {
 
 // Run Code logic
 el('runCodeBtn').addEventListener('click', () => {
-  const code = el('codeEditor').value;
+  const code = getEditorValue();
   const term = el('terminalOutput');
   const runBtn = el('runCodeBtn');
   const lang = el('languageSelect').value;
@@ -525,7 +567,7 @@ el('saveLocalBtn').addEventListener('click', async () => {
   const lang = el('languageSelect').value;
   const ext = lang === 'python' ? 'py' : lang === 'r' ? 'R' : lang === 'mysql' ? 'sql' : lang;
   const filename = `${activeTitle}.${ext}`;
-  const code = el('codeEditor').value;
+  const code = getEditorValue();
 
   try {
     if (!window.electronAPI) throw new Error('Available in desktop app only.');
