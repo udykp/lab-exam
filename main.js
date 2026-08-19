@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, clipboard } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -378,6 +378,12 @@ function restoreSuperKey() {
 
 ipcMain.on('lock-exam-window', () => {
   if (mainWindow) {
+    try {
+      clipboard.clear();
+      console.log('[ExamGuard] Clipboard cleared successfully on exam lock.');
+    } catch (err) {
+      console.error('[ExamGuard] Error clearing clipboard:', err);
+    }
     mainWindow._examLocked = true;
     mainWindow.setResizable(false);
     mainWindow.setMovable(false);
