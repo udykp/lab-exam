@@ -594,7 +594,7 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
     if (lang.includes('python')) {
       const pyFile = path.join(runDir, `solution.py`);
       fs.writeFileSync(pyFile, code, 'utf8');
-      exitCode = await spawnAndStream(event, 'python3', ['-u', 'solution.py'], { cwd: runDir });
+      exitCode = await spawnAndStream(event, 'python3', ['-s', '-u', 'solution.py'], { cwd: runDir });
     }
 
     // ── Java ────────────────────────────────────────────────────────────────
