@@ -290,7 +290,8 @@ const loadTabState = (index) => {
         const parts = url.split('/');
         const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
         const cleanName = cleanAttachmentFilename(filename);
-        const fullUrl = `${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
+        const base = url.startsWith('http') ? url : `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}`;
+        const fullUrl = `${base}${base.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
         
         const lower = filename.toLowerCase();
         const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
@@ -2006,8 +2007,8 @@ el('runCodeBtn').addEventListener('click', () => {
     const parts = url.split('/');
     const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
     const cleanName = cleanAttachmentFilename(filename);
-    // Construct the absolute download URL including protocol, host and roll_no token
-    const fullUrl = `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}${url.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
+    const base = url.startsWith('http') ? url : `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}`;
+    const fullUrl = `${base}${base.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
     return { filename: cleanName, url: fullUrl };
   }) : [];
 
