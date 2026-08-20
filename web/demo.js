@@ -249,6 +249,122 @@ function setEditorLanguage(lang) {
   }
 }
 
+// Add or Update Plot inside Sidebar split gallery
+function addOrUpdatePlot(data) {
+  const plotsSidebar = el('plotsSidebar');
+  const plotsPlaceholder = el('plotsPlaceholder');
+  const plotsActiveDisplay = el('plotsActiveDisplay');
+  const plotsActiveImg = el('plotsActiveImg');
+  const plotsActiveTitle = el('plotsActiveTitle');
+
+  if (!plotsSidebar) return;
+
+  // Clear placeholder if it exists
+  if (plotsSidebar.querySelector('div[style*="text-align"]')) {
+    plotsSidebar.innerHTML = '';
+  }
+
+  state.currentPlots = state.currentPlots || {};
+  state.currentPlots[data.filename] = data;
+
+  const btnId = `plots-btn-${data.filename.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  let btn = document.getElementById(btnId);
+
+  if (btn) {
+    // Update thumbnail image
+    const thumbImg = btn.querySelector('img');
+    if (thumbImg) {
+      thumbImg.src = `data:${data.type};base64,${data.content}`;
+    }
+    // Update active display if it's currently active
+    if (state.activePlotFilename === data.filename && plotsActiveImg) {
+      plotsActiveImg.src = `data:${data.type};base64,${data.content}`;
+    }
+  } else {
+    // Create new thumbnail button
+    btn = document.createElement('div');
+    btn.id = btnId;
+    btn.style.display = 'flex';
+    btn.style.alignItems = 'center';
+    btn.style.gap = '8px';
+    btn.style.padding = '8px';
+    btn.style.borderRadius = '6px';
+    btn.style.cursor = 'pointer';
+    btn.style.background = 'transparent';
+    btn.style.color = '#e4e4e7';
+    btn.style.transition = 'background 0.2s';
+    btn.style.fontFamily = 'system-ui, sans-serif';
+    btn.style.fontSize = '0.8rem';
+    btn.style.overflow = 'hidden';
+    btn.style.textOverflow = 'ellipsis';
+    btn.style.whiteSpace = 'nowrap';
+
+    const img = document.createElement('img');
+    img.src = `data:${data.type};base64,${data.content}`;
+    img.style.width = '40px';
+    img.style.height = '30px';
+    img.style.objectFit = 'contain';
+    img.style.borderRadius = '3px';
+    img.style.background = '#000000';
+    btn.appendChild(img);
+
+    const label = document.createElement('span');
+    label.textContent = data.filename;
+    label.style.overflow = 'hidden';
+    label.style.textOverflow = 'ellipsis';
+    btn.appendChild(label);
+
+    btn.addEventListener('click', () => {
+      // Un-select all buttons
+      plotsSidebar.querySelectorAll('div').forEach(d => {
+        if (d.id && d.id.startsWith('plots-btn-')) {
+          d.style.background = 'transparent';
+          d.style.borderLeft = 'none';
+          d.style.paddingLeft = '8px';
+        }
+      });
+      // Select this button
+      btn.style.background = 'rgba(255, 255, 255, 0.1)';
+      btn.style.borderLeft = '3px solid #10b981';
+      btn.style.paddingLeft = '5px';
+
+      state.activePlotFilename = data.filename;
+
+      if (plotsPlaceholder) plotsPlaceholder.classList.add('hidden');
+      if (plotsActiveDisplay) {
+        plotsActiveDisplay.classList.remove('hidden');
+        plotsActiveImg.src = `data:${data.type};base64,${data.content}`;
+        plotsActiveTitle.textContent = data.filename;
+      }
+    });
+
+    btn.addEventListener('mouseenter', () => {
+      if (state.activePlotFilename !== data.filename) {
+        btn.style.background = 'rgba(255, 255, 255, 0.05)';
+      }
+    });
+    btn.addEventListener('mouseleave', () => {
+      if (state.activePlotFilename !== data.filename) {
+        btn.style.background = 'transparent';
+      }
+    });
+
+    plotsSidebar.appendChild(btn);
+  }
+
+  if (!state.activePlotFilename || state.activePlotFilename === data.filename) {
+    btn.click();
+  }
+}
+
+if (el('plotsActiveImg')) {
+  el('plotsActiveImg').addEventListener('click', () => {
+    if (typeof openImageLightbox !== 'undefined') {
+      openImageLightbox(el('plotsActiveImg').src);
+    }
+  });
+}
+
 // Initialize Monaco Editor
 if (typeof require !== 'undefined') {
   require(['vs/editor/editor.main'], function () {
@@ -295,6 +411,109 @@ if (languageSelect) {
   });
 }
 
+  // Draggable Splitter (VS Code Style vertical resizing)
+  const splitter = el('verticalSplitter');
+  const editorWrapper = el('editorResizableWrapper');
+  const terminalWrapper = el('terminalResizableWrapper');
+
+  if (splitter && editorWrapper && terminalWrapper) {
+    splitter.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      
+      const startY = e.clientY;
+      const startH_ed = editorWrapper.offsetHeight;
+      const startH_term = terminalWrapper.offsetHeight;
+      
+      splitter.style.background = '#cbd5e1';
+      
+      const onMouseMove = (moveEvent) => {
+        const dY = moveEvent.clientY - startY;
+        const newH_ed = startH_ed + dY;
+        const newH_term = startH_term - dY;
+        
+        if (newH_ed >= 150 && newH_term >= 150) {
+          editorWrapper.style.setProperty('height', newH_ed + 'px');
+          terminalWrapper.style.setProperty('height', newH_term + 'px');
+          
+          if (monacoEditorInstance) {
+            monacoEditorInstance.layout();
+          }
+        }
+      };
+      
+      const onMouseUp = () => {
+        splitter.style.background = '#f4f4f5';
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      };
+      
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+
+    splitter.addEventListener('mouseenter', () => {
+      splitter.style.background = '#e2e8f0';
+    });
+    splitter.addEventListener('mouseleave', () => {
+      if (splitter.style.background !== 'rgb(203, 213, 225)') {
+        splitter.style.background = '#f4f4f5';
+      }
+    });
+  }
+
+  // Tab Switching between Console and Plots
+  const tabConsoleBtn = el('tabConsoleBtn');
+  const tabPlotsBtn = el('tabPlotsBtn');
+  const consoleContainer = el('terminalOutputContainer');
+  const plotsContainer = el('plotsTabContainer');
+  const plotsBadge = el('plotsBadge');
+  const outputsContainer = el('outputsContainer');
+
+  if (tabConsoleBtn && tabPlotsBtn && consoleContainer && plotsContainer) {
+    tabConsoleBtn.addEventListener('click', () => {
+      tabConsoleBtn.classList.add('active');
+      tabConsoleBtn.style.borderBottom = '3px solid #27272a';
+      tabConsoleBtn.style.color = '#27272a';
+      
+      tabPlotsBtn.classList.remove('active');
+      tabPlotsBtn.style.borderBottom = '3px solid transparent';
+      tabPlotsBtn.style.color = '#71717a';
+      
+      consoleContainer.classList.remove('hidden');
+      plotsContainer.classList.add('hidden');
+    });
+
+    tabPlotsBtn.addEventListener('click', () => {
+      tabPlotsBtn.classList.add('active');
+      tabPlotsBtn.style.borderBottom = '3px solid #27272a';
+      tabPlotsBtn.style.color = '#27272a';
+      
+      tabConsoleBtn.classList.remove('active');
+      tabConsoleBtn.style.borderBottom = '3px solid transparent';
+      tabConsoleBtn.style.color = '#71717a';
+      
+      plotsContainer.classList.remove('hidden');
+      consoleContainer.classList.add('hidden');
+      
+      // Hide red badge when viewed
+      if (plotsBadge) plotsBadge.style.display = 'none';
+    });
+  }
+
+  // Register Real-time Plot Updates
+  if (window.electronAPI) {
+    window.electronAPI.onPlotUpdated((data) => {
+      addOrUpdatePlot(data);
+
+      // Update badge if Plots tab is not currently active
+      if (tabPlotsBtn && !tabPlotsBtn.classList.contains('active') && plotsBadge) {
+        const currentCount = parseInt(plotsBadge.textContent || '0') + 1;
+        plotsBadge.textContent = currentCount;
+        plotsBadge.style.display = 'inline-block';
+      }
+    });
+  }
+
 // Clear terminal output
 el('clearTerminalBtn').addEventListener('click', () => {
   el('terminalOutput').textContent = '';
@@ -303,11 +522,49 @@ el('clearTerminalBtn').addEventListener('click', () => {
 // Stdin input piping
 el('terminalInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
-    const inputVal = el('terminalInput').value;
-    el('terminalInput').value = '';
-    el('terminalOutput').textContent += inputVal + '\n';
-    if (window.electronAPI) {
-      window.electronAPI.sendStdin(inputVal);
+    const val = el('terminalInput').value.trim();
+    if (!val) return;
+    
+    if (state.runWs && window.electronAPI) {
+      el('terminalOutput').textContent += val + '\n';
+      el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+      window.electronAPI.sendStdin(val);
+      el('terminalInput').value = '';
+    } else {
+      // No program running - treat as virtual env pip command
+      el('terminalOutput').textContent += `\n$ ${val}\n`;
+      el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+      el('terminalInput').value = '';
+
+      const match = val.match(/^(python3\s+-m\s+)?pip(3)?\s+install\s+(.+)$/i);
+      if (match && window.electronAPI) {
+        const rawPackages = match[3];
+        const packages = rawPackages.split(/\s+/).filter(p => p.trim() && !p.startsWith('-'));
+        if (packages.length > 0) {
+          el('terminalInput').disabled = true;
+          el('terminalInput').placeholder = 'Installing package(s)... Please wait...';
+          
+          window.electronAPI.onCodeOutput((data) => {
+            el('terminalOutput').textContent += data.data;
+            el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+          });
+
+          window.electronAPI.onPipExit((data) => {
+            el('terminalInput').disabled = false;
+            el('terminalInput').placeholder = 'Type input here and press Enter...';
+            el('terminalInput').focus();
+            window.electronAPI.removePipListeners();
+            window.electronAPI.removeCodeListeners();
+          });
+          
+          window.electronAPI.runPipInstall(packages);
+        } else {
+          el('terminalOutput').textContent += `[System Error]: Please specify at least one package name.\n`;
+        }
+      } else {
+        el('terminalOutput').textContent += `[System Error]: Only 'pip install <package>' commands are allowed for environment setup.\n`;
+      }
+      el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
     }
   }
 });
@@ -409,12 +666,22 @@ el('runCodeBtn').addEventListener('click', () => {
 
   state.runWs = true;
 
-  // Clear previous outputs
-  if (el('terminalOutputs')) {
-    el('terminalOutputs').classList.add('hidden');
+  // Clear previous outputs/plots and reset badge
+  state.currentPlots = {};
+  state.activePlotFilename = null;
+  if (el('plotsSidebar')) {
+    el('plotsSidebar').innerHTML = `<div style="color: #a1a1aa; font-size: 0.8rem; text-align: center; margin-top: 20px; font-family: system-ui, sans-serif;">No plots</div>`;
   }
-  if (el('outputsContainer')) {
-    el('outputsContainer').innerHTML = '';
+  if (el('plotsPlaceholder')) {
+    el('plotsPlaceholder').classList.remove('hidden');
+  }
+  if (el('plotsActiveDisplay')) {
+    el('plotsActiveDisplay').classList.add('hidden');
+  }
+  const plotsBadge = el('plotsBadge');
+  if (plotsBadge) {
+    plotsBadge.textContent = '0';
+    plotsBadge.style.display = 'none';
   }
 
   term.textContent = `Running ${lang.toUpperCase()} code...\n`;
@@ -423,7 +690,6 @@ el('runCodeBtn').addEventListener('click', () => {
   runBtn.style.background = '#ef4444';
   runBtn.style.color = '#ffffff';
 
-  el('terminalInputRow').classList.remove('hidden');
   el('terminalInput').value = '';
   el('terminalInput').focus();
 
@@ -434,7 +700,6 @@ el('runCodeBtn').addEventListener('click', () => {
     runBtn.style.removeProperty('color');
     state.runWs = null;
     window.electronAPI.removeCodeListeners();
-    el('terminalInputRow').classList.add('hidden');
   };
 
   window.electronAPI.removeCodeListeners();
@@ -466,54 +731,16 @@ el('runCodeBtn').addEventListener('click', () => {
     }
 
     if (data.generatedFiles && data.generatedFiles.length > 0) {
-      const outputsDiv = el('terminalOutputs');
-      const container = el('outputsContainer');
-      if (outputsDiv && container) {
-        container.innerHTML = '';
-        data.generatedFiles.forEach(file => {
-          const wrapper = document.createElement('div');
-          wrapper.style.background = '#ffffff';
-          wrapper.style.padding = '16px';
-          wrapper.style.borderRadius = '10px';
-          wrapper.style.border = '1px solid #cbd5e1';
-          wrapper.style.display = 'flex';
-          wrapper.style.flexDirection = 'column';
-          wrapper.style.gap = '8px';
-          wrapper.style.width = '100%';
-          wrapper.style.boxSizing = 'border-box';
+      data.generatedFiles.forEach(file => {
+        addOrUpdatePlot(file);
+      });
 
-          const title = document.createElement('span');
-          title.textContent = `📊 ${file.filename}`;
-          title.style.color = '#0f172a';
-          title.style.fontWeight = 'bold';
-          title.style.fontSize = '0.9rem';
-          title.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-          wrapper.appendChild(title);
-
-          if (file.type === 'application/pdf') {
-            const embed = document.createElement('embed');
-            embed.src = `data:application/pdf;base64,${file.content}`;
-            embed.type = 'application/pdf';
-            embed.style.width = '100%';
-            embed.style.height = '500px';
-            embed.style.borderRadius = '6px';
-            embed.style.border = '1px solid #cbd5e1';
-            wrapper.appendChild(embed);
-          } else {
-            const img = document.createElement('img');
-            img.src = `data:${file.type};base64,${file.content}`;
-            img.style.maxWidth = '100%';
-            img.style.maxHeight = '550px';
-            img.style.objectFit = 'contain';
-            img.style.borderRadius = '6px';
-            img.style.border = '1px solid #cbd5e1';
-            img.style.cursor = 'zoom-in';
-            img.addEventListener('click', () => openImageLightbox(img.src));
-            wrapper.appendChild(img);
-          }
-          container.appendChild(wrapper);
-        });
-        outputsDiv.classList.remove('hidden');
+      // Update badge if Plots tab is not active
+      const tabPlotsBtn = el('tabPlotsBtn');
+      const plotsBadge = el('plotsBadge');
+      if (tabPlotsBtn && !tabPlotsBtn.classList.contains('active') && plotsBadge) {
+        plotsBadge.textContent = data.generatedFiles.length;
+        plotsBadge.style.display = 'inline-block';
       }
     }
 

@@ -44,5 +44,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getServerUrl: () => {
     return ipcRenderer.invoke('get-server-url');
+  },
+  runPipInstall: (packages) => {
+    ipcRenderer.send('run-pip-install', packages);
+  },
+  onPipExit: (callback) => {
+    ipcRenderer.on('pip-exit', (event, data) => callback(data));
+  },
+  removePipListeners: () => {
+    ipcRenderer.removeAllListeners('pip-exit');
+  },
+  onPlotUpdated: (callback) => {
+    ipcRenderer.on('plot-updated', (event, data) => callback(data));
+  },
+  removePlotListeners: () => {
+    ipcRenderer.removeAllListeners('plot-updated');
   }
 });

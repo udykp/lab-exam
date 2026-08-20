@@ -42,7 +42,7 @@
     <button id="demoCloseBtn" title="Close Application" style="background:#ef4444;color:#fff;border:none;border-radius:4px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;cursor:pointer;font-weight:bold;transition:all 0.2s;">✕</button>
   </div>
 
-  <div class="shell" style="max-width: 1200px; margin: 0 auto; padding: 24px;">
+  <div class="shell" style="max-width: 1800px; width: min(1800px, calc(100% - 48px)); margin: 0 auto; padding: 24px;">
     
     <header style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
       <div>
@@ -58,14 +58,14 @@
         📝 Configure Program Question
       </h3>
       <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: -6px; margin-bottom: 16px;">
-        Select a program tab below, then use this form to customize its title, prompt, and local files.
+        Select a program tab below, then use this form to attach local files.
       </p>
       <div style="display: grid; grid-template-columns: 1fr; gap: 16px;">
-        <label>
+        <label style="display: none;">
           <span style="font-weight: bold; font-size: 0.85rem;">Program Title</span>
           <input id="demoQTitle" type="text" placeholder="e.g. Data Analysis" style="width: 100%;" />
         </label>
-        <label>
+        <label style="display: none;">
           <span style="font-weight: bold; font-size: 0.85rem;">Problem Description / Prompt</span>
           <textarea id="demoQPrompt" rows="4" placeholder="e.g. Read the attached CSV file and print the mean value..." style="width: 100%; font-family: sans-serif;"></textarea>
         </label>
@@ -88,8 +88,8 @@
         <span id="examLabel" style="color: #71717a;">Demo Test Environment</span>
         <span id="questionLabel" style="color: #71717a;">Question 1</span>
       </div>
-      <h3 id="questionTitle" style="color: #18181b; font-size: 1.5rem; margin: 6px 0;">Loading...</h3>
-      <p id="questionPrompt" style="color: #52525b; line-height: 1.6; margin-bottom: 0;">Your question prompt will appear here.</p>
+      <h3 id="questionTitle" style="color: #18181b; font-size: 1.5rem; margin: 6px 0; display: none !important;">Loading...</h3>
+      <p id="questionPrompt" style="color: #52525b; line-height: 1.6; margin-bottom: 0; display: none !important;">Your question prompt will appear here.</p>
       <div id="studentAttachments" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;"></div>
     </div>
 
@@ -111,7 +111,7 @@
 
       <div style="color: #27272a; display: flex; flex-direction: column; gap: 8px;">
         <span>Code</span>
-        <div style="height: 400px; min-height: 200px; resize: vertical; overflow: hidden; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; background: #ffffff;">
+        <div id="editorResizableWrapper" style="height: 400px; min-height: 150px; overflow: hidden; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; background: #ffffff;">
           <div id="codeEditor" style="height: 100%; width: 100%;"></div>
         </div>
       </div>
@@ -122,22 +122,45 @@
         <button id="saveLocalBtn" class="secondary" type="button" style="background: #ffffff !important; color: #18181b !important; border: 1.5px solid #e4e4e7 !important; border-radius: 10px; font-weight: 700;">💾 Save locally</button>
       </div>
 
+      <!-- Draggable Splitter -->
+      <div id="verticalSplitter" style="height: 12px; cursor: row-resize; display: flex; align-items: center; justify-content: center; background: #f4f4f5; margin: 12px 0; border: 1px solid #e4e4e7; border-radius: 6px; user-select: none; transition: background 0.2s;">
+        <div style="width: 40px; height: 4px; background: #a1a1aa; border-radius: 2px;"></div>
+      </div>
+
       <!-- Terminal Output Console -->
       <div id="codeTerminal" class="console" style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 14px; overflow: hidden; margin-top: 20px;">
-        <div class="console-head" style="display: flex; justify-content: space-between; align-items: center; background: #f4f4f5; padding: 12px 16px; border-bottom: 1px solid #e4e4e7; color: #27272a; font-weight: 600;">
-          <span>Terminal Output</span>
+        <div class="console-head" style="display: flex; justify-content: space-between; align-items: center; background: #f4f4f5; padding: 0 16px; border-bottom: 1px solid #e4e4e7; color: #27272a; font-weight: 600; height: 44px;">
+          <div style="display: flex; gap: 4px; height: 100%;">
+            <button id="tabConsoleBtn" type="button" style="background: transparent; color: #27272a; border: 0; padding: 0 12px; font-weight: 600; cursor: pointer; height: 100%; border-bottom: 3px solid #27272a; font-size: 0.9rem;" class="active">Console</button>
+            <button id="tabPlotsBtn" type="button" style="background: transparent; color: #71717a; border: 0; padding: 0 12px; font-weight: 600; cursor: pointer; height: 100%; border-bottom: 3px solid transparent; font-size: 0.9rem;">Plots <span id="plotsBadge" style="background: #ef4444; color: white; border-radius: 99px; padding: 1px 6px; font-size: 0.75rem; font-weight: bold; margin-left: 4px; display: none;">0</span></button>
+          </div>
           <button id="clearTerminalBtn" style="background: transparent; color: #71717a; border: 0; padding: 0; font-size: 0.8rem; cursor: pointer;" type="button">Clear</button>
         </div>
-        <div id="terminalOutputContainer" class="console-body" style="background: #18181b !important; color: #10b981 !important; font-family: monospace; min-height: 180px; height: 220px; resize: vertical; overflow: auto; font-size: 0.95rem; padding: 16px; display: flex; flex-direction: column; cursor: text;">
-          <pre id="terminalOutput" style="flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; font-family: inherit; border: none; background: transparent; padding: 0;">Terminal ready. Write code and click Run Code. (For graphs/plots, save them as an image e.g. plt.savefig('plot.png') to display them here).</pre>
-          <div id="terminalInputRow" class="hidden" style="display: flex; align-items: center; gap: 8px; color: #ffffff; margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">
-            <span style="color: #10b981; font-weight: bold;">$</span>
-            <input id="terminalInput" type="text" style="flex: 1; background: transparent; border: none; outline: none; color: #ffffff; font-family: monospace; font-size: 0.95rem; padding: 0; box-shadow: none !important;" placeholder="Type input here and press Enter..." autocomplete="off" />
+        <div id="terminalResizableWrapper" style="height: 250px; min-height: 150px; overflow: hidden; display: flex; flex-direction: column;">
+          <div id="terminalOutputContainer" class="console-body" style="flex: 1; background: #18181b !important; color: #10b981 !important; font-family: monospace; overflow: auto; font-size: 0.95rem; padding: 16px; display: flex; flex-direction: column; cursor: text; max-height: none !important;">
+            <pre id="terminalOutput" style="flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; color: inherit; font-family: inherit; border: none; background: transparent; padding: 0;">Terminal ready. Write code and click Run Code. (For graphs/plots, save them as an image e.g. plt.savefig('plot.png') to display them here).</pre>
+            <div id="terminalInputRow" style="display: flex; align-items: center; gap: 8px; color: #ffffff; margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">
+              <span style="color: #10b981; font-weight: bold;">$</span>
+              <input id="terminalInput" type="text" style="flex: 1; background: transparent; border: none; outline: none; color: #ffffff; font-family: monospace; font-size: 0.95rem; padding: 0; box-shadow: none !important;" placeholder="Type input here and press Enter..." autocomplete="off" />
+            </div>
           </div>
-        </div>
-        <div id="terminalOutputs" class="hidden" style="background: #f8fafc; border-top: 1px solid #e4e4e7; padding: 16px;">
-          <h4 style="color: #18181b; margin: 0 0 12px 0; font-size: 0.95rem; font-weight: 600; font-family: sans-serif;">Generated Outputs / Plots</h4>
-          <div id="outputsContainer" style="display: flex; flex-direction: column; gap: 16px;"></div>
+          <div id="plotsTabContainer" class="console-body hidden" style="flex: 1; background: #18181b !important; color: #ffffff !important; overflow: hidden; padding: 0; display: flex; box-sizing: border-box; max-height: none !important;">
+            <!-- Left Sidebar: Thumbnail File List -->
+            <div id="plotsSidebar" style="width: 160px; min-width: 160px; max-width: 160px; background: #27272a; border-right: 1px solid rgba(255, 255, 255, 0.1); display: flex; flex-direction: column; overflow-y: auto; padding: 8px; gap: 6px; box-sizing: border-box;">
+              <div style="color: #a1a1aa; font-size: 0.8rem; text-align: center; margin-top: 20px; font-family: system-ui, sans-serif;">No plots</div>
+            </div>
+            <!-- Right Side: Main Preview Viewer -->
+            <div id="plotsMainViewer" style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 12px; background: #1e1e24; box-sizing: border-box; position: relative; overflow: hidden;">
+              <div id="plotsPlaceholder" style="color: #a1a1aa; text-align: center; font-family: system-ui, sans-serif; padding: 20px;">
+                <div style="font-size: 1.2rem; margin-bottom: 8px; font-weight: bold; color: #e4e4e7;">📊 Plots Viewer</div>
+                <div style="font-size: 0.8rem; line-height: 1.4; max-width: 240px; margin: 0 auto;">Matplotlib plots generated by your code will appear here automatically.</div>
+              </div>
+              <div id="plotsActiveDisplay" class="hidden" style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; overflow: hidden;">
+                <img id="plotsActiveImg" style="max-width: 100%; max-height: calc(100% - 24px); object-fit: contain; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); cursor: zoom-in;" />
+                <span id="plotsActiveTitle" style="font-family: system-ui, sans-serif; font-size: 0.8rem; color: #a1a1aa; font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 100%;"></span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

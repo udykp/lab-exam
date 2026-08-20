@@ -1,18 +1,51 @@
 const { app, BrowserWindow, ipcMain, screen, clipboard } = require('electron');
+
+// Disable GPU hardware acceleration to prevent rendering thread freezes on Linux drivers
+app.disableHardwareAcceleration();
+
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
+const fs = require('fs');
 
 let mainWindow;
 let serverProcess = null;
 let focusLockInterval = null;
 
+const os = require('os');
+const venvPath = path.join(os.homedir(), '.securemlexam-venv');
+let pythonExecutable = 'python3';
+
+function ensureVenv() {
+  return new Promise((resolve) => {
+    const venvBin = process.platform === 'win32' ? path.join(venvPath, 'Scripts', 'python.exe') : path.join(venvPath, 'bin', 'python3');
+    if (fs.existsSync(venvBin)) {
+      console.log(`[Venv] Virtual environment found at: ${venvBin}`);
+      resolve(venvBin);
+      return;
+    }
+    console.log(`[Venv] Creating virtual environment at: ${venvPath}...`);
+    const { exec } = require('child_process');
+    exec(`python3 -m venv --system-site-packages "${venvPath}"`, (err) => {
+      if (err) {
+        console.error('[Venv] Failed to create virtual environment:', err.message);
+        resolve('python3');
+      } else {
+        console.log(`[Venv] Virtual environment created successfully.`);
+        resolve(venvBin);
+      }
+    });
+  });
+}
+
+ensureVenv().then(bin => {
+  pythonExecutable = bin;
+});
+
 // Determine Go backend binary path
 const isWin = process.platform === 'win32';
 const serverBinary = isWin ? 'server.exe' : 'server';
 const serverPath = path.join(__dirname, 'bin', serverBinary);
-
-const fs = require('fs');
 
 // Check if a remote server configuration exists or environment variable is set
 let remoteServerUrl = process.env.REMOTE_SERVER_URL || '';
@@ -108,20 +141,17 @@ function createWindow() {
   mainWindow.on('blur', () => {
     if (mainWindow && mainWindow._examLocked) {
       // Immediately close GNOME Activities Overview if triggered by 3-finger swipe
-      // This works on Wayland via GNOME Shell's D-Bus interface
       exec("gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval \"Main.overview.hide();\"", () => {});
 
-      mainWindow.focus();
-      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      // Recover focus after a short delay to prevent stacking/compositor race conditions
       setTimeout(() => {
-        if (mainWindow) {
-          mainWindow.setAlwaysOnTop(false);
-          mainWindow.setAlwaysOnTop(true, 'screen-saver');
+        if (mainWindow && mainWindow._examLocked && !mainWindow.isFocused()) {
+          console.log('[ExamGuard] Focus lost. Reclaiming window focus...');
           mainWindow.focus();
-          // Close overview again after a short delay in case it re-opened
+          mainWindow.setAlwaysOnTop(true, 'screen-saver');
           exec("gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval \"Main.overview.hide();\"", () => {});
         }
-      }, 200);
+      }, 150);
     }
     mainWindow.webContents.send('window-focus-changed', { focused: false });
   });
@@ -394,27 +424,20 @@ ipcMain.on('lock-exam-window', () => {
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     disableSuperKey();  // Block Windows key at OS level
     
-    // Start active focus enforcement loop (checks every 200ms)
-    // If the window loses focus, it immediately toggles kiosk mode to force focus back.
+    // Start active kiosk and fullscreen enforcement loop (checks every 2000ms)
     if (focusLockInterval) clearInterval(focusLockInterval);
     focusLockInterval = setInterval(() => {
       if (mainWindow && mainWindow._examLocked) {
-        if (!mainWindow.isFocused()) {
-          console.log('[ExamGuard] Window lost focus. Reclaiming focus...');
-          mainWindow.focus();
+        // Ensure kiosk and fullscreen mode are strictly active.
+        // This ensures that the window covers the GNOME panel and dock instantly.
+        if (!mainWindow.isKiosk() || !mainWindow.isFullScreen()) {
+          console.log('[ExamGuard] Enforcing fullscreen kiosk mode...');
+          mainWindow.setFullScreen(true);
+          mainWindow.setKiosk(true);
           mainWindow.setAlwaysOnTop(true, 'screen-saver');
-        } else {
-          // Ensure kiosk and fullscreen mode are strictly active when focused.
-          // This ensures that the window covers the GNOME panel and dock instantly when focused back.
-          if (!mainWindow.isKiosk() || !mainWindow.isFullScreen()) {
-            console.log('[ExamGuard] Enforcing fullscreen kiosk mode...');
-            mainWindow.setFullScreen(true);
-            mainWindow.setKiosk(true);
-            mainWindow.setAlwaysOnTop(true, 'screen-saver');
-          }
         }
       }
-    }, 200);
+    }, 2000);
 
     console.log('[ExamGuard] Window locked to fullscreen kiosk screen-saver layer.');
   }
@@ -468,20 +491,55 @@ ipcMain.handle('save-local-file', async (event, folderName, fileName, content, e
 let runningProcess = null;
 let tempFiles = [];
 
-const os = require('os');
-
 function cleanupTempFiles() {
   tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch (_) {} });
   tempFiles = [];
 }
 
 function sendOutput(event, data, stream = 'stdout') {
-  event.sender.send('code-output', { stream, data });
+  let processedData = data;
+  if (stream === 'stderr' && typeof data === 'string') {
+    const regex = /File "solution\.py", line (\d+)/g;
+    processedData = data.replace(regex, (match, lineNum) => {
+      const correctedLine = Math.max(1, parseInt(lineNum) - 14);
+      return `File "solution.py", line ${correctedLine}`;
+    });
+  }
+  event.sender.send('code-output', { stream, data: processedData });
 }
 
 function spawnAndStream(event, cmd, args, opts = {}) {
   const proc = spawn(cmd, args, { env: process.env, ...opts });
   runningProcess = proc;
+
+  let watcher = null;
+  const runDir = opts.cwd;
+  if (runDir && fs.existsSync(runDir)) {
+    try {
+      watcher = fs.watch(runDir, (eventType, filename) => {
+        if (filename) {
+          const lower = filename.toLowerCase();
+          if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp')) {
+            const filePath = path.join(runDir, filename);
+            setTimeout(() => {
+              if (fs.existsSync(filePath)) {
+                try {
+                  const content = fs.readFileSync(filePath).toString('base64');
+                  event.sender.send('plot-updated', {
+                    filename,
+                    content,
+                    type: `image/${lower.split('.').pop()}`
+                  });
+                } catch (_) {}
+              }
+            }, 100);
+          }
+        }
+      });
+    } catch (err) {
+      console.error('[Runner] Failed to start folder watcher:', err.message);
+    }
+  }
 
   let totalOutputLength = 0;
   const maxOutputLength = 100000; // 100 KB limit
@@ -531,11 +589,13 @@ function spawnAndStream(event, cmd, args, opts = {}) {
   return new Promise((resolve) => {
     proc.on('close', (code) => {
       clearTimeout(timeoutId);
+      if (watcher) { try { watcher.close(); } catch (_) {} }
       runningProcess = null;
       resolve(code);
     });
     proc.on('error', (err) => {
       clearTimeout(timeoutId);
+      if (watcher) { try { watcher.close(); } catch (_) {} }
       runningProcess = null;
       resolve(1);
       sendOutput(event, err.message, 'stderr');
@@ -575,10 +635,29 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
             sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
           } else {
             sendOutput(event, `Downloading dataset: ${att.filename}...\n`);
-            const response = await fetch(att.url);
-            if (!response.ok) {
-              throw new Error(`HTTP status ${response.status}`);
+            let response = null;
+            let downloadSuccess = false;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                response = await fetch(att.url);
+                if (response.ok) {
+                  downloadSuccess = true;
+                  break;
+                }
+                console.warn(`[Runner] Download attempt ${attempt} failed with status: ${response.status}`);
+              } catch (fetchErr) {
+                console.warn(`[Runner] Download attempt ${attempt} network error:`, fetchErr.message);
+              }
+              if (attempt < 3) {
+                sendOutput(event, `Retrying download of ${att.filename} (attempt ${attempt + 1}/3)...\n`);
+                await new Promise(r => setTimeout(r, 1000));
+              }
             }
+
+            if (!downloadSuccess || !response) {
+              throw new Error(`Failed to download after 3 attempts.`);
+            }
+
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             fs.writeFileSync(path.join(runDir, att.filename), buffer);
@@ -593,8 +672,25 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
     // ── Python ──────────────────────────────────────────────────────────────
     if (lang.includes('python')) {
       const pyFile = path.join(runDir, `solution.py`);
-      fs.writeFileSync(pyFile, code, 'utf8');
-      exitCode = await spawnAndStream(event, 'python3', ['-s', '-u', 'solution.py'], { cwd: runDir });
+      const overridePrefix = `_show_counter = 0
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    def _custom_show(*args, **kwargs):
+        global _show_counter
+        _show_counter += 1
+        plt.savefig(f'plot_{_show_counter}.png', bbox_inches='tight')
+        plt.close()
+    plt.show = _custom_show
+except:
+    pass
+`;
+      fs.writeFileSync(pyFile, overridePrefix + code, 'utf8');
+      exitCode = await spawnAndStream(event, pythonExecutable, ['-s', '-u', 'solution.py'], {
+        cwd: runDir,
+        env: { ...process.env, MPLBACKEND: 'Agg' }
+      });
     }
 
     // ── Java ────────────────────────────────────────────────────────────────
@@ -713,6 +809,44 @@ ipcMain.on('stop-code', (event) => {
   }
   cleanupTempFiles();
 });
+
+ipcMain.on('run-pip-install', (event, packages) => {
+  const pipBin = process.platform === 'win32' ? path.join(venvPath, 'Scripts', 'pip.exe') : path.join(venvPath, 'bin', 'pip');
+  
+  if (!fs.existsSync(pipBin)) {
+    sendOutput(event, `\n[Error]: Python virtual environment is not fully initialized. Please wait a moment and try again.\n`, 'stderr');
+    event.sender.send('pip-exit', { exitCode: 1 });
+    return;
+  }
+  
+  sendOutput(event, `\n[System]: Installing package(s): ${packages.join(', ')}...\n`);
+  
+  const cleanPackages = packages.filter(p => !p.startsWith('-') && /^[a-zA-Z0-9_\-\.]+$/.test(p));
+  if (cleanPackages.length === 0) {
+    sendOutput(event, `[Error]: Invalid package names.\n`, 'stderr');
+    event.sender.send('pip-exit', { exitCode: 1 });
+    return;
+  }
+  
+  try {
+    const proc = spawn(pipBin, ['install', ...cleanPackages], { env: process.env });
+    proc.on('error', (err) => {
+      sendOutput(event, `\n[Error]: Failed to run pip install: ${err.message}\n`, 'stderr');
+      event.sender.send('pip-exit', { exitCode: 1 });
+    });
+    proc.stdout.on('data', data => sendOutput(event, data.toString()));
+    proc.stderr.on('data', data => sendOutput(event, data.toString(), 'stderr'));
+    proc.on('close', code => {
+      if (code === 0) sendOutput(event, `\n[System]: Installation completed successfully!\n`);
+      else sendOutput(event, `\n[System]: Installation failed with exit code ${code}.\n`, 'stderr');
+      event.sender.send('pip-exit', { exitCode: code });
+    });
+  } catch (err) {
+    sendOutput(event, `\n[Error]: Exception while launching pip: ${err.message}\n`, 'stderr');
+    event.sender.send('pip-exit', { exitCode: 1 });
+  }
+});
+
 
 // Pipe keyboard input from the terminal UI into the running process stdin
 ipcMain.on('code-stdin', (event, text) => {
