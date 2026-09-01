@@ -19,12 +19,18 @@ cp "$APP_DIR/icon.png" "$ICON_DIR/securelab.png"
 
 NPM_BIN_DIR="$(dirname "$(which npm)")"
 
-# 3. Create wrapper script in the app directory to handle PATH expansion
+# 3. Create wrapper script in the app directory to handle PATH expansion & auto-update
 echo "Creating wrapper launch script..."
 cat <<EOF > "$APP_DIR/run.sh"
 #!/bin/bash
 export PATH="\$PATH:$NPM_BIN_DIR"
 cd "$APP_DIR"
+
+# Fast silent auto-update check (3-second timeout, skips if offline)
+if [ -d ".git" ]; then
+  timeout 3 git pull --ff-only origin main >/dev/null 2>&1 || true
+fi
+
 npm start
 EOF
 chmod +x "$APP_DIR/run.sh"
@@ -46,13 +52,17 @@ EOF
 # 5. Make .desktop launcher executable
 chmod +x "$DESKTOP_DIR/securelab.desktop"
 
-# 6. Create terminal commands (symlink run.sh into ~/.local/bin)
+# 6. Create terminal commands (symlink run.sh & update.sh into ~/.local/bin)
 echo "Creating terminal commands..."
 mkdir -p "$HOME/.local/bin"
 ln -sf "$APP_DIR/run.sh" "$HOME/.local/bin/securelab"
 ln -sf "$APP_DIR/run.sh" "$HOME/.local/bin/SecureLab"
+if [ -f "$APP_DIR/update.sh" ]; then
+  chmod +x "$APP_DIR/update.sh"
+  ln -sf "$APP_DIR/update.sh" "$HOME/.local/bin/securelab-update"
+fi
 
-# 5. Update Desktop Database to refresh app grid
+# 7. Update Desktop Database to refresh app grid
 echo "Refreshing system app registry..."
 update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
