@@ -324,7 +324,6 @@ code {
 
 .console-body {
   min-height: 150px;
-  max-height: 240px;
   overflow: auto;
   padding: 14px 16px;
   background: #1e293b;

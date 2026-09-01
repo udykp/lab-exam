@@ -1,6 +1,9 @@
-# Compiled binaries
+# Compiled binaries & archives
 bin/
 deploy/server
+exams/exams-backend
+exams/bootstrap_pocketbase
+*.zip
 
 # Database (contains student data - do not commit)
 *.db
