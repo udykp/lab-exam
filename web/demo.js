@@ -1,6 +1,224 @@
 // Helper: Get element by ID
 const el = (id) => document.getElementById(id);
 
+const escapeHtml = (str) => {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
+const cleanAttachmentFilename = (filename) => {
+  if (!filename) return '';
+  const match = filename.match(/^(.+?)_[a-z0-9]{8,24}(?:_[a-z0-9]{8,24})*\.([a-zA-Z0-9]+)$/i);
+  if (match) {
+    return `${match[1]}.${match[2]}`;
+  }
+  return filename;
+};
+
+const BOILERPLATES = {
+  python: `# Write your Python 3 code here\n`,
+  c: `#include <stdio.h>\n\nint main() {\n    // Write your C code here\n    return 0;\n}\n`,
+  cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}\n`,
+  java: `public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}\n`,
+  r: `# Write your R code here\n`,
+  mysql: `-- Write your SQL query here\n`
+};
+
+const isBoilerplateOrEmpty = (code) => {
+  if (!code || !code.trim()) return true;
+  const trimmed = code.trim();
+  return Object.values(BOILERPLATES).some(b => b.trim() === trimmed);
+};
+
+const formatCurrentCode = () => {
+  if (!monacoEditorInstance) return;
+  const action = monacoEditorInstance.getAction('editor.action.formatDocument');
+  if (action) {
+    action.run();
+  }
+};
+
+// ── Interactive Dataset Table Parser & Viewer ──────────────────────────────
+let currentDatasets = [];
+let activeDatasetIndex = 0;
+
+function parseCSV(text) {
+  if (!text || !text.trim()) return { headers: [], rows: [] };
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length === 0) return { headers: [], rows: [] };
+
+  const firstLine = lines[0];
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  const semiCount = (firstLine.match(/;/g) || []).length;
+  let delimiter = ',';
+  if (tabCount > commaCount && tabCount > semiCount) delimiter = '\t';
+  else if (semiCount > commaCount && semiCount > tabCount) delimiter = ';';
+
+  const parseLine = (line) => {
+    const values = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (c === delimiter && !inQuotes) {
+        values.push(cur.trim());
+        cur = '';
+      } else {
+        cur += c;
+      }
+    }
+    values.push(cur.trim());
+    return values;
+  };
+
+  const headers = parseLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    rows.push(parseLine(lines[i]));
+  }
+  return { headers, rows };
+}
+
+function renderDatasetTable(filterQuery = '') {
+  const tableWrapper = el('datasetTableContent');
+  const placeholder = el('datasetPlaceholder');
+  const metaSummary = el('datasetMetaSummary');
+  if (!tableWrapper || !placeholder) return;
+
+  if (currentDatasets.length === 0) {
+    placeholder.classList.remove('hidden');
+    tableWrapper.classList.add('hidden');
+    if (metaSummary) metaSummary.textContent = '';
+    return;
+  }
+
+  const ds = currentDatasets[activeDatasetIndex];
+  if (!ds || !ds.data || !ds.data.headers || ds.data.headers.length === 0) {
+    placeholder.classList.remove('hidden');
+    tableWrapper.classList.add('hidden');
+    if (metaSummary) metaSummary.textContent = '';
+    return;
+  }
+
+  placeholder.classList.add('hidden');
+  tableWrapper.classList.remove('hidden');
+
+  const { headers, rows } = ds.data;
+  const q = filterQuery.toLowerCase().trim();
+  const filteredRows = q ? rows.filter(r => r.some(c => String(c).toLowerCase().includes(q))) : rows;
+
+  if (metaSummary) {
+    metaSummary.textContent = `${filteredRows.length} of ${rows.length} rows × ${headers.length} cols`;
+  }
+
+  let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; font-family: monospace; text-align: left;">';
+  html += '<thead style="position: sticky; top: 0; background: #f1f5f9; z-index: 2; border-bottom: 2px solid #cbd5e1;"><tr>';
+  html += '<th style="padding: 6px 10px; color: #64748b; font-weight: 700; border-right: 1px solid #e2e8f0; width: 40px;">#</th>';
+  headers.forEach(h => {
+    html += `<th style="padding: 6px 10px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0; white-space: nowrap;">${escapeHtml(h)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  const maxDisplayRows = 200;
+  const slice = filteredRows.slice(0, maxDisplayRows);
+  slice.forEach((row, rIdx) => {
+    const bg = rIdx % 2 === 0 ? '#ffffff' : '#f8fafc';
+    html += `<tr style="background: ${bg}; border-bottom: 1px solid #e2e8f0;">`;
+    html += `<td style="padding: 4px 10px; color: #94a3b8; border-right: 1px solid #e2e8f0; font-size: 0.75rem;">${rIdx + 1}</td>`;
+    headers.forEach((_, cIdx) => {
+      const val = row[cIdx] !== undefined ? row[cIdx] : '';
+      html += `<td style="padding: 4px 10px; color: #334155; border-right: 1px solid #e2e8f0; white-space: nowrap; max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(String(val))}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  if (filteredRows.length > maxDisplayRows) {
+    html += `<tr><td colspan="${headers.length + 1}" style="padding: 10px; text-align: center; color: #64748b; font-style: italic; background: #f8fafc;">Showing first ${maxDisplayRows} of ${filteredRows.length} rows. Filter above to narrow down.</td></tr>`;
+  }
+  html += '</tbody></table>';
+
+  tableWrapper.innerHTML = html;
+}
+
+const loadDatasetsForDemoQuestion = (localFiles) => {
+  currentDatasets = [];
+  activeDatasetIndex = 0;
+  const fileSelect = el('datasetFileSelect');
+  const datasetBadge = el('datasetBadge');
+
+  if (!localFiles || localFiles.length === 0) {
+    if (fileSelect) fileSelect.innerHTML = '<option value="">No datasets</option>';
+    if (datasetBadge) {
+      datasetBadge.textContent = '0';
+      datasetBadge.style.display = 'none';
+    }
+    renderDatasetTable();
+    return;
+  }
+
+  const dataFiles = localFiles.filter(file => {
+    const lower = file.filename.toLowerCase();
+    return lower.endsWith('.csv') || lower.endsWith('.tsv') || lower.endsWith('.txt') || lower.endsWith('.json') || lower.endsWith('.dat');
+  });
+
+  if (dataFiles.length === 0) {
+    if (fileSelect) fileSelect.innerHTML = '<option value="">No tabular datasets</option>';
+    if (datasetBadge) {
+      datasetBadge.textContent = '0';
+      datasetBadge.style.display = 'none';
+    }
+    renderDatasetTable();
+    return;
+  }
+
+  if (fileSelect) {
+    fileSelect.innerHTML = '';
+  }
+
+  dataFiles.forEach((file, idx) => {
+    try {
+      let rawText = '';
+      if (file.content) {
+        rawText = atob(file.content);
+      }
+      const parsed = parseCSV(rawText);
+      currentDatasets.push({
+        filename: file.filename,
+        data: parsed
+      });
+      if (fileSelect) {
+        const opt = document.createElement('option');
+        opt.value = currentDatasets.length - 1;
+        opt.textContent = file.filename;
+        fileSelect.appendChild(opt);
+      }
+    } catch (e) {
+      console.warn('Failed to parse demo dataset:', file.filename, e);
+    }
+  });
+
+  if (datasetBadge) {
+    if (currentDatasets.length > 0) {
+      datasetBadge.textContent = currentDatasets.length;
+      datasetBadge.style.display = 'inline-block';
+    } else {
+      datasetBadge.textContent = '0';
+      datasetBadge.style.display = 'none';
+    }
+  }
+
+  renderDatasetTable();
+};
+
 // State management for local demo environment
 const state = {
   demoMode: true,
@@ -67,12 +285,19 @@ const loadTabState = (index) => {
     }
   }
 
+  // Load datasets if attached
+  loadDatasetsForDemoQuestion(q.localFiles);
+
   const draft = state.drafts[q.id] || {
     code: '',
     language: q.language || 'python',
     terminal: 'Terminal ready. Write code and click Run Code.',
     terminalColor: '#10b981',
   };
+
+  if (!draft.code || !draft.code.trim()) {
+    draft.code = BOILERPLATES[draft.language] || '';
+  }
 
   setEditorValue(draft.code);
   el('languageSelect').value = draft.language;
@@ -385,6 +610,11 @@ if (typeof require !== 'undefined') {
         folding: true,
       });
 
+      // Register Ctrl+Shift+F formatting command
+      monacoEditorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+        formatCurrentCode();
+      });
+
       // Sync editor content in real-time to the current draft
       monacoEditorInstance.onDidChangeModelContent(() => {
         const q = state.questions[state.activeQuestionIndex];
@@ -396,16 +626,20 @@ if (typeof require !== 'undefined') {
   });
 }
 
-// Track language selection changes
+// Track language selection changes with boilerplate injection
 const languageSelect = el('languageSelect');
 if (languageSelect) {
   languageSelect.addEventListener('change', (e) => {
     const lang = e.target.value;
     setEditorLanguage(lang);
+    if (isBoilerplateOrEmpty(getEditorValue())) {
+      setEditorValue(BOILERPLATES[lang] || '');
+    }
     if (state.questions.length > 0) {
       const q = state.questions[state.activeQuestionIndex];
       if (q && state.drafts[q.id]) {
         state.drafts[q.id].language = lang;
+        state.drafts[q.id].code = getEditorValue();
       }
     }
   });
@@ -461,42 +695,71 @@ if (languageSelect) {
     });
   }
 
-  // Tab Switching between Console and Plots
+  // Tab Switching between Console, Plots, and Dataset
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
+  const tabDatasetBtn = el('tabDatasetBtn');
   const consoleContainer = el('terminalOutputContainer');
   const plotsContainer = el('plotsTabContainer');
+  const datasetContainer = el('datasetTabContainer');
   const plotsBadge = el('plotsBadge');
-  const outputsContainer = el('outputsContainer');
+  const datasetBadge = el('datasetBadge');
 
-  if (tabConsoleBtn && tabPlotsBtn && consoleContainer && plotsContainer) {
-    tabConsoleBtn.addEventListener('click', () => {
+  const switchBottomTab = (activeTab) => {
+    [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn].forEach(btn => {
+      if (btn) {
+        btn.classList.remove('active');
+        btn.style.borderBottom = '3px solid transparent';
+        btn.style.color = '#71717a';
+      }
+    });
+    [consoleContainer, plotsContainer, datasetContainer].forEach(c => {
+      if (c) c.classList.add('hidden');
+    });
+
+    if (activeTab === 'console' && tabConsoleBtn && consoleContainer) {
       tabConsoleBtn.classList.add('active');
       tabConsoleBtn.style.borderBottom = '3px solid #27272a';
       tabConsoleBtn.style.color = '#27272a';
-      
-      tabPlotsBtn.classList.remove('active');
-      tabPlotsBtn.style.borderBottom = '3px solid transparent';
-      tabPlotsBtn.style.color = '#71717a';
-      
       consoleContainer.classList.remove('hidden');
-      plotsContainer.classList.add('hidden');
-    });
-
-    tabPlotsBtn.addEventListener('click', () => {
+    } else if (activeTab === 'plots' && tabPlotsBtn && plotsContainer) {
       tabPlotsBtn.classList.add('active');
       tabPlotsBtn.style.borderBottom = '3px solid #27272a';
       tabPlotsBtn.style.color = '#27272a';
-      
-      tabConsoleBtn.classList.remove('active');
-      tabConsoleBtn.style.borderBottom = '3px solid transparent';
-      tabConsoleBtn.style.color = '#71717a';
-      
       plotsContainer.classList.remove('hidden');
-      consoleContainer.classList.add('hidden');
-      
-      // Hide red badge when viewed
       if (plotsBadge) plotsBadge.style.display = 'none';
+    } else if (activeTab === 'dataset' && tabDatasetBtn && datasetContainer) {
+      tabDatasetBtn.classList.add('active');
+      tabDatasetBtn.style.borderBottom = '3px solid #27272a';
+      tabDatasetBtn.style.color = '#27272a';
+      datasetContainer.classList.remove('hidden');
+      if (datasetBadge) datasetBadge.style.display = 'none';
+    }
+  };
+
+  if (tabConsoleBtn) tabConsoleBtn.addEventListener('click', () => switchBottomTab('console'));
+  if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
+  if (tabDatasetBtn) tabDatasetBtn.addEventListener('click', () => switchBottomTab('dataset'));
+
+  // Dataset File Select & Search Filter
+  if (el('datasetFileSelect')) {
+    el('datasetFileSelect').addEventListener('change', (e) => {
+      activeDatasetIndex = parseInt(e.target.value, 10) || 0;
+      const q = el('datasetSearchInput') ? el('datasetSearchInput').value : '';
+      renderDatasetTable(q);
+    });
+  }
+
+  if (el('datasetSearchInput')) {
+    el('datasetSearchInput').addEventListener('input', (e) => {
+      renderDatasetTable(e.target.value);
+    });
+  }
+
+  // Format Code Button
+  if (el('formatCodeBtn')) {
+    el('formatCodeBtn').addEventListener('click', () => {
+      formatCurrentCode();
     });
   }
 
@@ -678,6 +941,9 @@ el('runCodeBtn').addEventListener('click', () => {
   if (el('plotsActiveDisplay')) {
     el('plotsActiveDisplay').classList.add('hidden');
   }
+  if (el('executionMetricsBadge')) {
+    el('executionMetricsBadge').classList.add('hidden');
+  }
   const plotsBadge = el('plotsBadge');
   if (plotsBadge) {
     plotsBadge.textContent = '0';
@@ -742,6 +1008,16 @@ el('runCodeBtn').addEventListener('click', () => {
         plotsBadge.textContent = data.generatedFiles.length;
         plotsBadge.style.display = 'inline-block';
       }
+    }
+
+    if (el('executionMetricsBadge')) {
+      const timeSec = ((data.executionTimeMs || 0) / 1000).toFixed(2);
+      const memStr = data.peakMemoryMb ? ` | 💾 ${data.peakMemoryMb} MB` : '';
+      el('executionMetricsBadge').textContent = `⏱️ ${timeSec}s${memStr}`;
+      el('executionMetricsBadge').style.color = data.exitCode === 0 ? '#15803d' : '#b91c1c';
+      el('executionMetricsBadge').style.background = data.exitCode === 0 ? '#dcfce7' : '#fee2e2';
+      el('executionMetricsBadge').style.borderColor = data.exitCode === 0 ? '#bbf7d0' : '#fecaca';
+      el('executionMetricsBadge').classList.remove('hidden');
     }
 
     el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;

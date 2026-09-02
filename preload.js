@@ -59,5 +59,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removePlotListeners: () => {
     ipcRenderer.removeAllListeners('plot-updated');
+  },
+  fetchTextUrl: (url) => {
+    return ipcRenderer.invoke('fetch-text-url', url);
   }
 });

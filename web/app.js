@@ -32,7 +32,9 @@ const state = {
 const el = (id) => document.getElementById(id);
 
 const cleanAttachmentFilename = (filename) => {
-  const match = filename.match(/^(.+?)_[a-z0-9]{10}_[a-z0-9]{10}\.([a-zA-Z0-9]+)$/i);
+  if (!filename) return '';
+  // Strips PocketBase random hashes, e.g. 'scores_h1lddobkyq.csv' -> 'scores.csv'
+  const match = filename.match(/^(.+?)_[a-z0-9]{8,24}(?:_[a-z0-9]{8,24})*\.([a-zA-Z0-9]+)$/i);
   if (match) {
     return `${match[1]}.${match[2]}`;
   }
@@ -72,20 +74,276 @@ function setEditorValue(val) {
   }
 }
 
-function setEditorLanguage(lang) {
-  if (monacoEditorInstance) {
-    const model = monacoEditorInstance.getModel();
-    if (model) {
-      let monacoLang = lang;
-      if (lang === 'cpp') monacoLang = 'cpp';
-      if (lang === 'c') monacoLang = 'c';
-      if (lang === 'java') monacoLang = 'java';
-      if (lang === 'r') monacoLang = 'r';
-      if (lang === 'mysql') monacoLang = 'sql';
-      monaco.editor.setModelLanguage(model, monacoLang);
+const escapeHtml = (str) => {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
+const BOILERPLATES = {
+  python: `# Write your Python 3 code here\n`,
+  c: `#include <stdio.h>\n\nint main() {\n    // Write your C code here\n    return 0;\n}\n`,
+  cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write your C++ code here\n    return 0;\n}\n`,
+  java: `public class Main {\n    public static void main(String[] args) {\n        // Write your Java code here\n    }\n}\n`,
+  r: `# Write your R code here\n`,
+  mysql: `-- Write your SQL query here\n`
+};
+
+const isBoilerplateOrEmpty = (code) => {
+  if (!code || !code.trim()) return true;
+  const trimmed = code.trim();
+  return Object.values(BOILERPLATES).some(b => b.trim() === trimmed);
+};
+
+const formatCurrentCode = () => {
+  if (!monacoEditorInstance) return;
+  const action = monacoEditorInstance.getAction('editor.action.formatDocument');
+  if (action) {
+    action.run();
+  }
+};
+
+const getAutosaveKey = () => {
+  if (state.examId && state.rollNumber) {
+    return `securelab_draft_${state.examId}_${state.rollNumber}`;
+  }
+  return null;
+};
+
+let autosaveTimer = null;
+const saveDraftSnapshot = () => {
+  const key = getAutosaveKey();
+  if (!key) return;
+  try {
+    if (state.questions.length > 0) {
+      const q = state.questions[state.activeQuestionIndex];
+      if (q) {
+        if (!state.drafts[q.id]) state.drafts[q.id] = {};
+        state.drafts[q.id].code = getEditorValue();
+        const langEl = el('languageSelect');
+        if (langEl) state.drafts[q.id].language = langEl.value;
+        const termEl = el('terminalOutput');
+        if (termEl) {
+          state.drafts[q.id].terminal = termEl.textContent;
+          state.drafts[q.id].terminalColor = termEl.style.color || '#10b981';
+        }
+      }
+    }
+    localStorage.setItem(key, JSON.stringify({
+      drafts: state.drafts,
+      activeQuestionIndex: state.activeQuestionIndex,
+      savedAt: Date.now()
+    }));
+  } catch (_) {}
+};
+
+const triggerDebouncedAutosave = () => {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(saveDraftSnapshot, 400);
+};
+
+// ── Interactive Dataset Table Parser & Viewer ──────────────────────────────
+let currentDatasets = [];
+let activeDatasetIndex = 0;
+
+function parseCSV(text) {
+  if (!text || !text.trim()) return { headers: [], rows: [] };
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length === 0) return { headers: [], rows: [] };
+
+  const firstLine = lines[0];
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  const semiCount = (firstLine.match(/;/g) || []).length;
+  let delimiter = ',';
+  if (tabCount > commaCount && tabCount > semiCount) delimiter = '\t';
+  else if (semiCount > commaCount && semiCount > tabCount) delimiter = ';';
+
+  const parseLine = (line) => {
+    const values = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (c === delimiter && !inQuotes) {
+        values.push(cur.trim());
+        cur = '';
+      } else {
+        cur += c;
+      }
+    }
+    values.push(cur.trim());
+    return values;
+  };
+
+  const headers = parseLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    rows.push(parseLine(lines[i]));
+  }
+  return { headers, rows };
+}
+
+function renderDatasetTable(filterQuery = '') {
+  const tableWrapper = el('datasetTableContent');
+  const placeholder = el('datasetPlaceholder');
+  const metaSummary = el('datasetMetaSummary');
+  if (!tableWrapper || !placeholder) return;
+
+  if (currentDatasets.length === 0) {
+    placeholder.classList.remove('hidden');
+    tableWrapper.classList.add('hidden');
+    if (metaSummary) metaSummary.textContent = '';
+    return;
+  }
+
+  const ds = currentDatasets[activeDatasetIndex];
+  if (!ds || !ds.data || !ds.data.headers || ds.data.headers.length === 0) {
+    placeholder.classList.remove('hidden');
+    tableWrapper.classList.add('hidden');
+    if (metaSummary) metaSummary.textContent = '';
+    return;
+  }
+
+  placeholder.classList.add('hidden');
+  tableWrapper.classList.remove('hidden');
+
+  const { headers, rows } = ds.data;
+  const q = filterQuery.toLowerCase().trim();
+  const filteredRows = q ? rows.filter(r => r.some(c => String(c).toLowerCase().includes(q))) : rows;
+
+  if (metaSummary) {
+    metaSummary.textContent = `${filteredRows.length} of ${rows.length} rows × ${headers.length} cols`;
+  }
+
+  let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; font-family: monospace; text-align: left;">';
+  html += '<thead style="position: sticky; top: 0; background: #f1f5f9; z-index: 2; border-bottom: 2px solid #cbd5e1;"><tr>';
+  html += '<th style="padding: 6px 10px; color: #64748b; font-weight: 700; border-right: 1px solid #e2e8f0; width: 40px;">#</th>';
+  headers.forEach(h => {
+    html += `<th style="padding: 6px 10px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0; white-space: nowrap;">${escapeHtml(h)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  const maxDisplayRows = 200;
+  const slice = filteredRows.slice(0, maxDisplayRows);
+  slice.forEach((row, rIdx) => {
+    const bg = rIdx % 2 === 0 ? '#ffffff' : '#f8fafc';
+    html += `<tr style="background: ${bg}; border-bottom: 1px solid #e2e8f0;">`;
+    html += `<td style="padding: 4px 10px; color: #94a3b8; border-right: 1px solid #e2e8f0; font-size: 0.75rem;">${rIdx + 1}</td>`;
+    headers.forEach((_, cIdx) => {
+      const val = row[cIdx] !== undefined ? row[cIdx] : '';
+      html += `<td style="padding: 4px 10px; color: #334155; border-right: 1px solid #e2e8f0; white-space: nowrap; max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(String(val))}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  if (filteredRows.length > maxDisplayRows) {
+    html += `<tr><td colspan="${headers.length + 1}" style="padding: 10px; text-align: center; color: #64748b; font-style: italic; background: #f8fafc;">Showing first ${maxDisplayRows} of ${filteredRows.length} rows. Filter above to narrow down.</td></tr>`;
+  }
+  html += '</tbody></table>';
+
+  tableWrapper.innerHTML = html;
+}
+
+const loadDatasetsForQuestion = async (attachmentUrls) => {
+  currentDatasets = [];
+  activeDatasetIndex = 0;
+  const fileSelect = el('datasetFileSelect');
+  const datasetBadge = el('datasetBadge');
+
+  if (!attachmentUrls || attachmentUrls.length === 0) {
+    if (fileSelect) fileSelect.innerHTML = '<option value="">No datasets</option>';
+    if (datasetBadge) {
+      datasetBadge.textContent = '0';
+      datasetBadge.style.display = 'none';
+    }
+    renderDatasetTable();
+    return;
+  }
+
+  const dataFiles = attachmentUrls.filter(url => {
+    const cleanPath = url.split('?')[0].toLowerCase();
+    return cleanPath.endsWith('.csv') || cleanPath.endsWith('.tsv') || cleanPath.endsWith('.txt') || cleanPath.endsWith('.json') || cleanPath.endsWith('.dat');
+  });
+
+  if (dataFiles.length === 0) {
+    if (fileSelect) fileSelect.innerHTML = '<option value="">No tabular datasets</option>';
+    if (datasetBadge) {
+      datasetBadge.textContent = '0';
+      datasetBadge.style.display = 'none';
+    }
+    renderDatasetTable();
+    return;
+  }
+
+  if (fileSelect) {
+    fileSelect.innerHTML = '';
+  }
+
+  for (let i = 0; i < dataFiles.length; i++) {
+    const url = dataFiles[i];
+    const parts = url.split('/');
+    const rawFilename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
+    const cleanName = cleanAttachmentFilename(rawFilename);
+
+    try {
+      const base = url.startsWith('http') ? url : `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}`;
+      const fullUrl = `${base}${base.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
+      
+      let text = '';
+      if (window.electronAPI && window.electronAPI.fetchTextUrl) {
+        const fetchRes = await window.electronAPI.fetchTextUrl(fullUrl);
+        if (fetchRes && fetchRes.success) {
+          text = fetchRes.text;
+        } else {
+          console.warn('[Dataset] fetchTextUrl returned error:', fetchRes?.error);
+        }
+      }
+      
+      if (!text) {
+        const res = await fetch(fullUrl);
+        if (res.ok) {
+          text = await res.text();
+        }
+      }
+
+      if (text) {
+        const parsed = parseCSV(text);
+        currentDatasets.push({
+          filename: cleanName,
+          data: parsed
+        });
+        if (fileSelect) {
+          const opt = document.createElement('option');
+          opt.value = currentDatasets.length - 1;
+          opt.textContent = cleanName;
+          fileSelect.appendChild(opt);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch dataset:', cleanName, e);
     }
   }
-}
+
+  if (datasetBadge) {
+    if (currentDatasets.length > 0) {
+      datasetBadge.textContent = currentDatasets.length;
+      datasetBadge.style.display = 'inline-block';
+    } else {
+      datasetBadge.textContent = '0';
+      datasetBadge.style.display = 'none';
+    }
+  }
+
+  renderDatasetTable();
+};
 
 // Add or Update Plot inside Sidebar split gallery
 function addOrUpdatePlot(data) {
@@ -195,6 +453,21 @@ function addOrUpdatePlot(data) {
   }
 }
 
+function setEditorLanguage(lang) {
+  if (monacoEditorInstance) {
+    const model = monacoEditorInstance.getModel();
+    if (model) {
+      let monacoLang = lang;
+      if (lang === 'cpp') monacoLang = 'cpp';
+      if (lang === 'c') monacoLang = 'c';
+      if (lang === 'java') monacoLang = 'java';
+      if (lang === 'r') monacoLang = 'r';
+      if (lang === 'mysql') monacoLang = 'sql';
+      monaco.editor.setModelLanguage(model, monacoLang);
+    }
+  }
+}
+
 // Initialize Monaco Editor
 if (typeof require !== 'undefined') {
   require(['vs/editor/editor.main'], function () {
@@ -215,30 +488,41 @@ if (typeof require !== 'undefined') {
         folding: true,
       });
 
-      // Sync editor content in real-time to the current draft
+      // Register Ctrl+Shift+F formatting command
+      monacoEditorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+        formatCurrentCode();
+      });
+
+      // Sync editor content in real-time to the current draft and autosave
       monacoEditorInstance.onDidChangeModelContent(() => {
         if (state.questions.length === 0) return;
         const q = state.questions[state.activeQuestionIndex];
         if (q && state.drafts[q.id]) {
           state.drafts[q.id].code = monacoEditorInstance.getValue();
         }
+        triggerDebouncedAutosave();
       });
     }
   });
 }
 
-// Track language selection changes
+// Track language selection changes with boilerplate injection
 const languageSelect = el('languageSelect');
 if (languageSelect) {
   languageSelect.addEventListener('change', (e) => {
     const lang = e.target.value;
     setEditorLanguage(lang);
+    if (isBoilerplateOrEmpty(getEditorValue())) {
+      setEditorValue(BOILERPLATES[lang] || '');
+    }
     if (state.questions.length > 0) {
       const q = state.questions[state.activeQuestionIndex];
       if (q && state.drafts[q.id]) {
         state.drafts[q.id].language = lang;
+        state.drafts[q.id].code = getEditorValue();
       }
     }
+    saveDraftSnapshot();
   });
 }
 
@@ -375,10 +659,11 @@ const saveCurrentTabState = () => {
   if (!q) return;
   state.drafts[q.id] = {
     code: getEditorValue(),
-    language: el('languageSelect').value,
-    terminal: el('terminalOutput').textContent,
-    terminalColor: el('terminalOutput').style.color,
+    language: el('languageSelect') ? el('languageSelect').value : 'python',
+    terminal: el('terminalOutput') ? el('terminalOutput').textContent : '',
+    terminalColor: el('terminalOutput') ? el('terminalOutput').style.color : '#10b981',
   };
+  saveDraftSnapshot();
 };
 
 const loadTabState = (index) => {
@@ -425,6 +710,9 @@ const loadTabState = (index) => {
     }
   }
 
+  // Load tabular datasets if attached
+  loadDatasetsForQuestion(q.attachmentUrls);
+
   const draft = state.drafts[q.id] || {
     code: '',
     language: q.language || 'python',
@@ -432,11 +720,17 @@ const loadTabState = (index) => {
     terminalColor: '#10b981',
   };
 
+  if (!draft.code || !draft.code.trim()) {
+    draft.code = BOILERPLATES[draft.language] || '';
+  }
+
   setEditorValue(draft.code);
-  el('languageSelect').value = draft.language;
+  if (el('languageSelect')) el('languageSelect').value = draft.language;
   setEditorLanguage(draft.language);
-  el('terminalOutput').textContent = draft.terminal;
-  el('terminalOutput').style.color = draft.terminalColor;
+  if (el('terminalOutput')) {
+    el('terminalOutput').textContent = draft.terminal;
+    el('terminalOutput').style.color = draft.terminalColor;
+  }
 
   document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === index);
@@ -572,6 +866,33 @@ const loadStudentExam = async () => {
       };
     });
     state.activeQuestionIndex = 0;
+
+    // ── Crash & Reboot Protection Shield: Restore local unsubmitted draft session ──
+    const autosaveKey = getAutosaveKey();
+    if (autosaveKey) {
+      try {
+        const saved = localStorage.getItem(autosaveKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.drafts) {
+            Object.keys(parsed.drafts).forEach(qId => {
+              if (state.drafts[qId] && parsed.drafts[qId].code) {
+                state.drafts[qId] = {
+                  ...state.drafts[qId],
+                  ...parsed.drafts[qId]
+                };
+              }
+            });
+            if (typeof parsed.activeQuestionIndex === 'number' && parsed.activeQuestionIndex < state.questions.length) {
+              state.activeQuestionIndex = parsed.activeQuestionIndex;
+            }
+            logEvent('🛡️ Crash Protection: Restored local unsubmitted exam session.');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to restore autosaved draft:', err);
+      }
+    }
 
     if (state.questions.length > 0) {
       const tabsContainer = el('studentTabs');
@@ -1966,6 +2287,10 @@ const doEndExam = async () => {
     }
   }
 
+  // Clear local autosave snapshot
+  const autosaveKey = getAutosaveKey();
+  if (autosaveKey) localStorage.removeItem(autosaveKey);
+
   // Clear session
   state.token = '';
   localStorage.removeItem('securemlexam_token');
@@ -2048,6 +2373,9 @@ el('runCodeBtn').addEventListener('click', () => {
   }
   if (el('plotsActiveDisplay')) {
     el('plotsActiveDisplay').classList.add('hidden');
+  }
+  if (el('executionMetricsBadge')) {
+    el('executionMetricsBadge').classList.add('hidden');
   }
   const plotsBadge = el('plotsBadge');
   if (plotsBadge) {
@@ -2133,6 +2461,16 @@ el('runCodeBtn').addEventListener('click', () => {
       }
     }
 
+    if (el('executionMetricsBadge')) {
+      const timeSec = ((data.executionTimeMs || 0) / 1000).toFixed(2);
+      const memStr = data.peakMemoryMb ? ` | 💾 ${data.peakMemoryMb} MB` : '';
+      el('executionMetricsBadge').textContent = `⏱️ ${timeSec}s${memStr}`;
+      el('executionMetricsBadge').style.color = data.exitCode === 0 ? '#15803d' : '#b91c1c';
+      el('executionMetricsBadge').style.background = data.exitCode === 0 ? '#dcfce7' : '#fee2e2';
+      el('executionMetricsBadge').style.borderColor = data.exitCode === 0 ? '#bbf7d0' : '#fecaca';
+      el('executionMetricsBadge').classList.remove('hidden');
+    }
+
     el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
     cleanupRunState();
   });
@@ -2140,11 +2478,11 @@ el('runCodeBtn').addEventListener('click', () => {
   const q = state.questions[state.activeQuestionIndex];
   const attachments = (q && q.attachmentUrls) ? q.attachmentUrls.map(url => {
     const parts = url.split('/');
-    const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
-    const cleanName = cleanAttachmentFilename(filename);
+    const rawName = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
+    const cleanName = cleanAttachmentFilename(rawName);
     const base = url.startsWith('http') ? url : `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}`;
     const fullUrl = `${base}${base.includes('?') ? '&' : '?'}roll_no=${encodeURIComponent(state.rollNumber)}`;
-    return { filename: cleanName, url: fullUrl };
+    return { filename: cleanName, rawFilename: rawName, url: fullUrl };
   }) : [];
 
   window.electronAPI.runCode(code, lang, attachments);
@@ -2523,42 +2861,79 @@ window.addEventListener('load', async () => {
     });
   }
 
-  // Tab Switching between Console and Plots
+  // Tab Switching between Console, Plots, and Dataset
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
+  const tabDatasetBtn = el('tabDatasetBtn');
   const consoleContainer = el('terminalOutputContainer');
   const plotsContainer = el('plotsTabContainer');
+  const datasetContainer = el('datasetTabContainer');
   const plotsBadge = el('plotsBadge');
-  const outputsContainer = el('outputsContainer');
+  const datasetBadge = el('datasetBadge');
 
-  if (tabConsoleBtn && tabPlotsBtn && consoleContainer && plotsContainer) {
-    tabConsoleBtn.addEventListener('click', () => {
+  const switchBottomTab = (activeTab) => {
+    [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn].forEach(btn => {
+      if (btn) {
+        btn.classList.remove('active');
+        btn.style.borderBottom = '3px solid transparent';
+        btn.style.color = '#71717a';
+      }
+    });
+    [consoleContainer, plotsContainer, datasetContainer].forEach(c => {
+      if (c) c.classList.add('hidden');
+    });
+
+    if (activeTab === 'console' && tabConsoleBtn && consoleContainer) {
       tabConsoleBtn.classList.add('active');
       tabConsoleBtn.style.borderBottom = '3px solid #27272a';
       tabConsoleBtn.style.color = '#27272a';
-      
-      tabPlotsBtn.classList.remove('active');
-      tabPlotsBtn.style.borderBottom = '3px solid transparent';
-      tabPlotsBtn.style.color = '#71717a';
-      
       consoleContainer.classList.remove('hidden');
-      plotsContainer.classList.add('hidden');
-    });
-
-    tabPlotsBtn.addEventListener('click', () => {
+    } else if (activeTab === 'plots' && tabPlotsBtn && plotsContainer) {
       tabPlotsBtn.classList.add('active');
       tabPlotsBtn.style.borderBottom = '3px solid #27272a';
       tabPlotsBtn.style.color = '#27272a';
-      
-      tabConsoleBtn.classList.remove('active');
-      tabConsoleBtn.style.borderBottom = '3px solid transparent';
-      tabConsoleBtn.style.color = '#71717a';
-      
       plotsContainer.classList.remove('hidden');
-      consoleContainer.classList.add('hidden');
-      
-      // Hide red badge when viewed
       if (plotsBadge) plotsBadge.style.display = 'none';
+    } else if (activeTab === 'dataset' && tabDatasetBtn && datasetContainer) {
+      tabDatasetBtn.classList.add('active');
+      tabDatasetBtn.style.borderBottom = '3px solid #27272a';
+      tabDatasetBtn.style.color = '#27272a';
+      datasetContainer.classList.remove('hidden');
+      if (datasetBadge) datasetBadge.style.display = 'none';
+    }
+  };
+
+  if (tabConsoleBtn) tabConsoleBtn.addEventListener('click', () => switchBottomTab('console'));
+  if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
+  if (tabDatasetBtn) {
+    tabDatasetBtn.addEventListener('click', () => {
+      switchBottomTab('dataset');
+      const q = state.questions[state.activeQuestionIndex];
+      if (currentDatasets.length === 0 && q && q.attachmentUrls && q.attachmentUrls.length > 0) {
+        loadDatasetsForQuestion(q.attachmentUrls);
+      }
+    });
+  }
+
+  // Dataset File Select & Search Filter
+  if (el('datasetFileSelect')) {
+    el('datasetFileSelect').addEventListener('change', (e) => {
+      activeDatasetIndex = parseInt(e.target.value, 10) || 0;
+      const q = el('datasetSearchInput') ? el('datasetSearchInput').value : '';
+      renderDatasetTable(q);
+    });
+  }
+
+  if (el('datasetSearchInput')) {
+    el('datasetSearchInput').addEventListener('input', (e) => {
+      renderDatasetTable(e.target.value);
+    });
+  }
+
+  // Format Code Button
+  if (el('formatCodeBtn')) {
+    el('formatCodeBtn').addEventListener('click', () => {
+      formatCurrentCode();
     });
   }
 

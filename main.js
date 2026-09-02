@@ -509,8 +509,28 @@ function sendOutput(event, data, stream = 'stdout') {
 }
 
 function spawnAndStream(event, cmd, args, opts = {}) {
+  const startHrTime = process.hrtime.bigint();
   const proc = spawn(cmd, args, { env: process.env, ...opts });
   runningProcess = proc;
+
+  let peakMemoryKb = 0;
+  let memPollInterval = null;
+  if (process.platform === 'linux' && proc.pid) {
+    memPollInterval = setInterval(() => {
+      try {
+        if (!proc.pid) return;
+        const statusPath = `/proc/${proc.pid}/status`;
+        if (fs.existsSync(statusPath)) {
+          const statusContent = fs.readFileSync(statusPath, 'utf8');
+          const vmrssMatch = statusContent.match(/VmHWM:\s+(\d+)\s+kB/) || statusContent.match(/VmRSS:\s+(\d+)\s+kB/);
+          if (vmrssMatch) {
+            const memKb = parseInt(vmrssMatch[1], 10);
+            if (memKb > peakMemoryKb) peakMemoryKb = memKb;
+          }
+        }
+      } catch (_) {}
+    }, 40);
+  }
 
   let watcher = null;
   const runDir = opts.cwd;
@@ -589,16 +609,30 @@ function spawnAndStream(event, cmd, args, opts = {}) {
   return new Promise((resolve) => {
     proc.on('close', (code) => {
       clearTimeout(timeoutId);
+      if (memPollInterval) clearInterval(memPollInterval);
       if (watcher) { try { watcher.close(); } catch (_) {} }
+      const endHrTime = process.hrtime.bigint();
+      const durationMs = Number(endHrTime - startHrTime) / 1e6;
       runningProcess = null;
-      resolve(code);
+      resolve({
+        exitCode: code,
+        executionTimeMs: Math.round(durationMs),
+        peakMemoryMb: peakMemoryKb > 0 ? (peakMemoryKb / 1024).toFixed(1) : null
+      });
     });
     proc.on('error', (err) => {
       clearTimeout(timeoutId);
+      if (memPollInterval) clearInterval(memPollInterval);
       if (watcher) { try { watcher.close(); } catch (_) {} }
+      const endHrTime = process.hrtime.bigint();
+      const durationMs = Number(endHrTime - startHrTime) / 1e6;
       runningProcess = null;
-      resolve(1);
       sendOutput(event, err.message, 'stderr');
+      resolve({
+        exitCode: 1,
+        executionTimeMs: Math.round(durationMs),
+        peakMemoryMb: peakMemoryKb > 0 ? (peakMemoryKb / 1024).toFixed(1) : null
+      });
     });
   });
 }
@@ -629,10 +663,12 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
 
         try {
           if (att.isLocal && att.content) {
-            sendOutput(event, `Writing local dataset: ${att.filename}...\n`);
-            const buffer = Buffer.from(att.content, 'base64');
-            fs.writeFileSync(path.join(runDir, att.filename), buffer);
-            sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
+            const fileBuf = Buffer.from(att.content, 'base64');
+            fs.writeFileSync(path.join(runDir, att.filename), fileBuf);
+            if (att.rawFilename && att.rawFilename !== att.filename) {
+              fs.writeFileSync(path.join(runDir, att.rawFilename), fileBuf);
+            }
+            sendOutput(event, `Loaded attached file: ${att.filename}\n`);
           } else {
             sendOutput(event, `Downloading dataset: ${att.filename}...\n`);
             let response = null;
@@ -661,6 +697,9 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             fs.writeFileSync(path.join(runDir, att.filename), buffer);
+            if (att.rawFilename && att.rawFilename !== att.filename) {
+              fs.writeFileSync(path.join(runDir, att.rawFilename), buffer);
+            }
             sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
           }
         } catch (err) {
@@ -687,7 +726,7 @@ except:
     pass
 `;
       fs.writeFileSync(pyFile, overridePrefix + code, 'utf8');
-      exitCode = await spawnAndStream(event, pythonExecutable, ['-s', '-u', 'solution.py'], {
+      runResult = await spawnAndStream(event, pythonExecutable, ['-s', '-u', 'solution.py'], {
         cwd: runDir,
         env: { ...process.env, MPLBACKEND: 'Agg' }
       });
@@ -701,10 +740,12 @@ except:
       fs.writeFileSync(javaFile, code, 'utf8');
 
       sendOutput(event, `Compiling ${className}.java...\n`);
-      exitCode = await spawnAndStream(event, 'javac', [`${className}.java`], { cwd: runDir });
-      if (exitCode === 0) {
+      const compileRes = await spawnAndStream(event, 'javac', [`${className}.java`], { cwd: runDir });
+      if (compileRes.exitCode === 0) {
         sendOutput(event, `Running ${className}...\n`);
-        exitCode = await spawnAndStream(event, 'java', [className], { cwd: runDir });
+        runResult = await spawnAndStream(event, 'java', [className], { cwd: runDir });
+      } else {
+        runResult = compileRes;
       }
     }
 
@@ -715,10 +756,12 @@ except:
       fs.writeFileSync(cFile, code, 'utf8');
 
       sendOutput(event, 'Compiling C code...\n');
-      exitCode = await spawnAndStream(event, 'gcc', ['solution.c', '-o', 'solution.out', '-lm'], { cwd: runDir });
-      if (exitCode === 0) {
+      const compileRes = await spawnAndStream(event, 'gcc', ['solution.c', '-o', 'solution.out', '-lm'], { cwd: runDir });
+      if (compileRes.exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
+        runResult = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
+      } else {
+        runResult = compileRes;
       }
     }
 
@@ -729,10 +772,12 @@ except:
       fs.writeFileSync(cppFile, code, 'utf8');
 
       sendOutput(event, 'Compiling C++ code...\n');
-      exitCode = await spawnAndStream(event, 'g++', ['solution.cpp', '-o', 'solution.out', '-lm', '-std=c++17'], { cwd: runDir });
-      if (exitCode === 0) {
+      const compileRes = await spawnAndStream(event, 'g++', ['solution.cpp', '-o', 'solution.out', '-lm', '-std=c++17'], { cwd: runDir });
+      if (compileRes.exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        exitCode = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
+        runResult = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
+      } else {
+        runResult = compileRes;
       }
     }
 
@@ -740,14 +785,14 @@ except:
     else if (lang === 'r' || lang.includes('rscript')) {
       const rFile = path.join(runDir, `solution.R`);
       fs.writeFileSync(rFile, code, 'utf8');
-      exitCode = await spawnAndStream(event, 'Rscript', ['--vanilla', 'solution.R'], { cwd: runDir });
+      runResult = await spawnAndStream(event, 'Rscript', ['--vanilla', 'solution.R'], { cwd: runDir });
     }
 
     // ── MySQL ────────────────────────────────────────────────────────────────
     else if (lang.includes('mysql') || lang.includes('sql')) {
       const sqlFile = path.join(runDir, `solution.sql`);
       fs.writeFileSync(sqlFile, code, 'utf8');
-      exitCode = await spawnAndStream(event, 'mysql', [
+      runResult = await spawnAndStream(event, 'mysql', [
         '-u', 'exam_user',
         '-pexam_password',
         'labexam',
@@ -759,11 +804,11 @@ except:
     // ── Unknown ──────────────────────────────────────────────────────────────
     else {
       sendOutput(event, `[Error]: Language "${language}" is not supported.\nSupported: Python, Java, C, C++, R, MySQL\n`, 'stderr');
-      exitCode = 1;
+      runResult = { exitCode: 1, executionTimeMs: 0, peakMemoryMb: null };
     }
   } catch (err) {
     sendOutput(event, `[Runner Error]: ${err.message}\n`, 'stderr');
-    exitCode = 1;
+    runResult = { exitCode: 1, executionTimeMs: 0, peakMemoryMb: null };
   }
 
   // Look for generated files (png, jpg, jpeg, gif, webp, pdf) before cleanup
@@ -798,7 +843,12 @@ except:
 
   // Cleanup run directory recursively
   try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
-  event.sender.send('code-exit', { exitCode, generatedFiles });
+  event.sender.send('code-exit', {
+    exitCode: runResult.exitCode,
+    generatedFiles,
+    executionTimeMs: runResult.executionTimeMs || 0,
+    peakMemoryMb: runResult.peakMemoryMb || null
+  });
 });
 
 ipcMain.on('stop-code', (event) => {
@@ -860,6 +910,27 @@ ipcMain.on('code-stdin', (event, text) => {
 
 ipcMain.handle('get-server-url', () => {
   return remoteServerUrl || 'http://localhost:8080';
+});
+
+ipcMain.handle('fetch-text-url', async (event, url) => {
+  try {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          const text = await response.text();
+          return { success: true, text };
+        }
+        console.warn(`[fetch-text-url] Attempt ${attempt} HTTP ${response.status}`);
+      } catch (err) {
+        console.warn(`[fetch-text-url] Attempt ${attempt} network error:`, err.message);
+      }
+      if (attempt < 3) await new Promise(r => setTimeout(r, 600));
+    }
+    return { success: false, error: 'Failed to download dataset after 3 attempts' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 
