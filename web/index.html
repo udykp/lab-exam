@@ -34,9 +34,9 @@
   <main class="shell">
     <section class="hero">
       <div>
-        <p class="eyebrow">Secure Lab Examination Platform</p>
-        <h1>Run exams, assign chits, and see questions live.</h1>
-        <p class="lede">A local browser UI for faculty and students with Excel roster import, fixed question assignment, live WebSocket updates, and direct exam delivery.</p>
+        <p class="eyebrow">Secure Exam Client</p>
+        <h1>Secure Student Workspace</h1>
+        <p class="lede">Please enter your details to verify your identity and start your exam.</p>
       </div>
       <div class="status-card" style="display: none !important;">
         <span class="status-dot"></span>
@@ -62,11 +62,11 @@
           <input type="hidden" name="role" value="student" />
           <label class="student-only">
             <span>Name</span>
-            <input name="name" placeholder="Demo Student" />
+            <input name="name" placeholder="e.g. John Doe" />
           </label>
           <label class="student-only">
             <span>Roll Number</span>
-            <input name="rollNumber" placeholder="220101" />
+            <input name="rollNumber" placeholder="e.g. 220101" />
           </label>
           <label class="faculty-admin-only hidden">
             <span>Email / Username</span>
@@ -96,12 +96,12 @@
           <button id="loginSubmitBtn" class="primary" type="submit">Sign in</button>
         </form>
 
-        <div id="debugActionsRow" class="actions-row">
+        <div id="debugActionsRow" class="actions-row hidden">
           <button id="connectWsBtn" class="secondary" type="button">Connect WebSocket</button>
           <button id="refreshBtn" class="secondary" type="button">Refresh Current View</button>
         </div>
 
-        <div id="tokenPreviewBox" class="token-box">
+        <div id="tokenPreviewBox" class="token-box hidden">
           <div>
             <span>Token</span>
             <code id="tokenPreview">Not signed in</code>
