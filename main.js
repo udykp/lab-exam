@@ -489,6 +489,7 @@ ipcMain.handle('save-local-file', async (event, folderName, fileName, content, e
 // ── Local Code Runner ────────────────────────────────────────────────────────
 // Supports: Python, Java, C, C++, R, MySQL — executed locally on the machine.
 let runningProcess = null;
+let resetExecutionTimer = null;
 let tempFiles = [];
 
 function cleanupTempFiles() {
@@ -565,16 +566,39 @@ function spawnAndStream(event, cmd, args, opts = {}) {
   const maxOutputLength = 100000; // 100 KB limit
   let killed = false;
 
-  // Enforce a hard timeout of 30 seconds
-  const timeoutId = setTimeout(() => {
+  const INACTIVITY_TIMEOUT_MS = 60000; // 60s idle window without input/output
+  const HARD_CAP_TIMEOUT_MS = 180000;  // 180s (3 minutes) maximum safety ceiling
+
+  let inactivityTimerId = null;
+
+  const resetInactivityTimer = () => {
+    if (inactivityTimerId) clearTimeout(inactivityTimerId);
+    if (killed) return;
+    inactivityTimerId = setTimeout(() => {
+      if (runningProcess === proc) {
+        killed = true;
+        sendOutput(event, '\n\n[Execution timed out after 60 seconds of inactivity]\n', 'stderr');
+        try {
+          proc.kill('SIGKILL');
+        } catch (_) {}
+      }
+    }, INACTIVITY_TIMEOUT_MS);
+  };
+
+  // Start the initial inactivity countdown & expose the reset hook for stdin
+  resetInactivityTimer();
+  resetExecutionTimer = resetInactivityTimer;
+
+  // Enforce the 3-minute hard global safety ceiling
+  const hardCapTimerId = setTimeout(() => {
     if (runningProcess === proc) {
       killed = true;
-      sendOutput(event, '\n\n[Execution Timed Out after 30 seconds]\n', 'stderr');
+      sendOutput(event, '\n\n[Execution terminated: Maximum limit of 3 minutes reached]\n', 'stderr');
       try {
         proc.kill('SIGKILL');
       } catch (_) {}
     }
-  }, 30000);
+  }, HARD_CAP_TIMEOUT_MS);
 
   proc.stdout.on('data', (d) => {
     if (killed) return;
@@ -588,6 +612,8 @@ function spawnAndStream(event, cmd, args, opts = {}) {
       } catch (_) {}
       return;
     }
+    // Program outputted data (e.g. input prompt) -> grant fresh inactivity window
+    resetInactivityTimer();
     sendOutput(event, str, 'stdout');
   });
 
@@ -603,12 +629,15 @@ function spawnAndStream(event, cmd, args, opts = {}) {
       } catch (_) {}
       return;
     }
+    resetInactivityTimer();
     sendOutput(event, str, 'stderr');
   });
 
   return new Promise((resolve) => {
     proc.on('close', (code) => {
-      clearTimeout(timeoutId);
+      if (inactivityTimerId) clearTimeout(inactivityTimerId);
+      if (hardCapTimerId) clearTimeout(hardCapTimerId);
+      resetExecutionTimer = null;
       if (memPollInterval) clearInterval(memPollInterval);
       if (watcher) { try { watcher.close(); } catch (_) {} }
       const endHrTime = process.hrtime.bigint();
@@ -621,7 +650,9 @@ function spawnAndStream(event, cmd, args, opts = {}) {
       });
     });
     proc.on('error', (err) => {
-      clearTimeout(timeoutId);
+      if (inactivityTimerId) clearTimeout(inactivityTimerId);
+      if (hardCapTimerId) clearTimeout(hardCapTimerId);
+      resetExecutionTimer = null;
       if (memPollInterval) clearInterval(memPollInterval);
       if (watcher) { try { watcher.close(); } catch (_) {} }
       const endHrTime = process.hrtime.bigint();
@@ -857,6 +888,9 @@ ipcMain.on('stop-code', (event) => {
     runningProcess = null;
     event.sender.send('code-exit', { exitCode: -1, error: 'Stopped by user.' });
   }
+  if (typeof resetExecutionTimer === 'function') {
+    resetExecutionTimer = null;
+  }
   cleanupTempFiles();
 });
 
@@ -903,6 +937,9 @@ ipcMain.on('code-stdin', (event, text) => {
   if (runningProcess && runningProcess.stdin && !runningProcess.stdin.destroyed) {
     try {
       runningProcess.stdin.write(text + '\n');
+      if (typeof resetExecutionTimer === 'function') {
+        resetExecutionTimer(); // Student sent input -> grant another full 60s inactivity window!
+      }
     } catch (_) {}
   }
 });

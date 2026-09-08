@@ -114,6 +114,47 @@ const getAutosaveKey = () => {
 };
 
 let autosaveTimer = null;
+let serverSyncTimer = null;
+
+const saveEmergencyDiskBackup = async () => {
+  if (!window.electronAPI || !state.rollNumber || state.questions.length === 0) return;
+  const q = state.questions[state.activeQuestionIndex];
+  if (!q) return;
+
+  const code = getEditorValue();
+  const lang = el('languageSelect') ? el('languageSelect').value : 'python';
+  const ext = lang === 'python' ? 'py' : lang === 'r' ? 'R' : lang === 'mysql' ? 'sql' : lang;
+  const folderName = `SecureLab_Emergency_Backups/${state.rollNumber}`;
+  const filename = `Question_${q.number || (state.activeQuestionIndex + 1)}.${ext}`;
+
+  try {
+    await window.electronAPI.saveLocalFile(folderName, filename, code);
+  } catch (_) {}
+};
+
+const syncActiveDraftToServer = async () => {
+  if (!state.examId || !state.rollNumber || state.role !== 'student' || state.questions.length === 0) return;
+  const q = state.questions[state.activeQuestionIndex];
+  if (!q || !q.id || q.id.startsWith('demo-')) return;
+
+  const code = getEditorValue();
+  if (code === undefined || code === null) return;
+
+  try {
+    await api('/api/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assignment_id: q.id,
+        student_roll_no: state.rollNumber,
+        response: code,
+      }),
+    });
+  } catch (err) {
+    // Silent catch so student experience is never interrupted
+  }
+};
+
 const saveDraftSnapshot = () => {
   const key = getAutosaveKey();
   if (!key) return;
@@ -138,11 +179,15 @@ const saveDraftSnapshot = () => {
       savedAt: Date.now()
     }));
   } catch (_) {}
+  saveEmergencyDiskBackup();
 };
 
 const triggerDebouncedAutosave = () => {
   clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(saveDraftSnapshot, 400);
+
+  clearTimeout(serverSyncTimer);
+  serverSyncTimer = setTimeout(syncActiveDraftToServer, 10000);
 };
 
 // ── Interactive Dataset Table Parser & Viewer ──────────────────────────────
@@ -664,6 +709,7 @@ const saveCurrentTabState = () => {
     terminalColor: el('terminalOutput') ? el('terminalOutput').style.color : '#10b981',
   };
   saveDraftSnapshot();
+  syncActiveDraftToServer();
 };
 
 const loadTabState = (index) => {
@@ -2360,6 +2406,8 @@ el('runCodeBtn').addEventListener('click', () => {
   }
 
   // ── Start run ──────────────────────────────────────────────────────────
+  saveDraftSnapshot();
+  syncActiveDraftToServer();
   state.runWs = true; // use as "running" flag
 
   // Clear previous outputs/plots and reset badge
