@@ -501,9 +501,14 @@ function sendOutput(event, data, stream = 'stdout') {
   let processedData = data;
   if (stream === 'stderr' && typeof data === 'string') {
     const regex = /File "solution\.py", line (\d+)/g;
-    processedData = data.replace(regex, (match, lineNum) => {
+    processedData = processedData.replace(regex, (match, lineNum) => {
       const correctedLine = Math.max(1, parseInt(lineNum) - 14);
       return `File "solution.py", line ${correctedLine}`;
+    });
+    const rRegex = /solution\.R:(\d+):/g;
+    processedData = processedData.replace(rRegex, (match, lineNum) => {
+      const correctedLine = Math.max(1, parseInt(lineNum) - 1);
+      return `solution.R:${correctedLine}:`;
     });
   }
   event.sender.send('code-output', { stream, data: processedData });
@@ -815,7 +820,9 @@ except:
     // ── R ───────────────────────────────────────────────────────────────────
     else if (lang === 'r' || lang.includes('rscript')) {
       const rFile = path.join(runDir, `solution.R`);
-      fs.writeFileSync(rFile, code, 'utf8');
+      const rPrefix = `options(device = function(...) png("plot_%03d.png", width = 800, height = 600, res = 100))\n`;
+      const rSuffix = `\ninvisible(graphics.off())\n`;
+      fs.writeFileSync(rFile, rPrefix + code + rSuffix, 'utf8');
       runResult = await spawnAndStream(event, 'Rscript', ['--vanilla', 'solution.R'], { cwd: runDir });
     }
 
@@ -847,7 +854,7 @@ except:
   try {
     if (fs.existsSync(runDir)) {
       const files = fs.readdirSync(runDir);
-      const sourceFiles = ['solution.py', 'solution.R', 'solution.c', 'solution.cpp', 'solution.out', 'solution.java', 'solution.class', 'solution.sql'];
+      const sourceFiles = ['solution.py', 'solution.R', 'solution.c', 'solution.cpp', 'solution.out', 'solution.java', 'solution.class', 'solution.sql', 'Rplots.pdf'];
       const attachmentNames = attachments ? attachments.map(a => a.filename) : [];
       
       for (const file of files) {
