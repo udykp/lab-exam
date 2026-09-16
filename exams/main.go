@@ -62,11 +62,13 @@ type questionPaper struct {
 
 type exam struct {
 	ID                  string `json:"id"`
+	Code                string `json:"code,omitempty"`
 	Title               string `json:"title"`
 	Year                string `json:"year"`
 	Semester            string `json:"semester"`
 	Section             string `json:"section"`
 	Subject             string `json:"subject"`
+	OfferingID          string `json:"offering_id,omitempty"`
 	FacultyID           string `json:"faculty_id,omitempty"`
 	FacultyAssignmentID string `json:"faculty_assignment_id,omitempty"`
 	Status              string `json:"status,omitempty"`
@@ -2013,6 +2015,7 @@ func handleGetAssignments(w http.ResponseWriter, r *http.Request, client *pocket
 
 	type attemptWithQuestions struct {
 		attempt
+		ExamCode     string            `json:"exam_code"`
 		ExamTitle    string            `json:"exam_title"`
 		PaperTitle   string            `json:"paper_title"`
 		Locked       bool              `json:"locked"`
@@ -2070,6 +2073,7 @@ func handleGetAssignments(w http.ResponseWriter, r *http.Request, client *pocket
 		att.StudentID = att.StudentRollNo
 		attemptsList = append(attemptsList, attemptWithQuestions{
 			attempt:    att,
+			ExamCode:   ex.Code,
 			ExamTitle:  ex.Title,
 			PaperTitle: pap.Title,
 			Locked:     att.Status == "submitted",
@@ -2335,6 +2339,7 @@ func handleAttemptsStart(w http.ResponseWriter, r *http.Request, client *pocketB
 	var req struct {
 		StudentRollNo string `json:"student_roll_no"`
 		ExamID        string `json:"exam_id"`
+		ExamCode      string `json:"exam_code"`
 		AttemptID     string `json:"attempt_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2355,12 +2360,25 @@ func handleAttemptsStart(w http.ResponseWriter, r *http.Request, client *pocketB
 		filter = fmt.Sprintf(`id = %q && student_roll_no = %q`, req.AttemptID, req.StudentRollNo)
 	} else if req.ExamID != "" {
 		filter = fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, req.ExamID, req.StudentRollNo)
-	} else {
-		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "exam_id or attempt_id is required"})
-		return
+	}
+	if filter != "" {
+		_ = client.listRecords("attempts", filter, &attempts)
+	}
+	if len(attempts.Items) == 0 && (req.ExamCode != "" || req.ExamID != "") {
+		codeToLook := strings.TrimSpace(req.ExamCode)
+		if codeToLook == "" {
+			codeToLook = strings.TrimSpace(req.ExamID)
+		}
+		var exList struct {
+			Items []exam `json:"items"`
+		}
+		if err := client.listRecords("exams", fmt.Sprintf(`code = %q`, codeToLook), &exList); err == nil && len(exList.Items) > 0 {
+			filter = fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, exList.Items[0].ID, req.StudentRollNo)
+			_ = client.listRecords("attempts", filter, &attempts)
+		}
 	}
 
-	if err := client.listRecords("attempts", filter, &attempts); err != nil || len(attempts.Items) == 0 {
+	if len(attempts.Items) == 0 {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "attempt not found"})
 		return
 	}
@@ -2392,6 +2410,7 @@ func handleAttemptsSubmit(w http.ResponseWriter, r *http.Request, client *pocket
 	var req struct {
 		StudentRollNo string `json:"student_roll_no"`
 		ExamID        string `json:"exam_id"`
+		ExamCode      string `json:"exam_code"`
 		AttemptID     string `json:"attempt_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2412,12 +2431,25 @@ func handleAttemptsSubmit(w http.ResponseWriter, r *http.Request, client *pocket
 		filter = fmt.Sprintf(`id = %q && student_roll_no = %q`, req.AttemptID, req.StudentRollNo)
 	} else if req.ExamID != "" {
 		filter = fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, req.ExamID, req.StudentRollNo)
-	} else {
-		writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "exam_id or attempt_id is required"})
-		return
+	}
+	if filter != "" {
+		_ = client.listRecords("attempts", filter, &attempts)
+	}
+	if len(attempts.Items) == 0 && (req.ExamCode != "" || req.ExamID != "") {
+		codeToLook := strings.TrimSpace(req.ExamCode)
+		if codeToLook == "" {
+			codeToLook = strings.TrimSpace(req.ExamID)
+		}
+		var exList struct {
+			Items []exam `json:"items"`
+		}
+		if err := client.listRecords("exams", fmt.Sprintf(`code = %q`, codeToLook), &exList); err == nil && len(exList.Items) > 0 {
+			filter = fmt.Sprintf(`exam_id = %q && student_roll_no = %q`, exList.Items[0].ID, req.StudentRollNo)
+			_ = client.listRecords("attempts", filter, &attempts)
+		}
 	}
 
-	if err := client.listRecords("attempts", filter, &attempts); err != nil || len(attempts.Items) == 0 {
+	if len(attempts.Items) == 0 {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "attempt not found"})
 		return
 	}

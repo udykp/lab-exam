@@ -21,6 +21,7 @@ const state = {
   serverUrl: localStorage.getItem('securemlexam_server_url') || 'https://exams.crraoaimscs.ac.in',
   examId: localStorage.getItem('securemlexam_exam_id') || 'exam-1',
   examCode: '',
+  activeAttemptId: localStorage.getItem('securemlexam_attempt_id') || '',
   ws: null,
   currentClassStudents: [],
   selectedStudentRolls: new Set(),
@@ -837,85 +838,102 @@ const saveAllProgramsLocally = async () => {
 const loadStudentExam = async () => {
   if (!state.token) return;
   try {
-    let assignments = [];
-    let hasRealAssignments = false;
+    const res = await api(`/api/assignments?roll_no=${encodeURIComponent(state.rollNumber)}`);
+    const data = res.data || {};
+    const attempts = data.attempts || [];
+    const rawAssignments = Array.isArray(data) ? data : (data.assignments || []);
+    
+    const enteredCode = (state.examCode || state.examId || localStorage.getItem('securemlexam_exam_id') || '').trim();
+    const enteredUpper = enteredCode.toUpperCase();
 
-    // Load actual student assignments from server
-    try {
-      const res = await api(`/api/assignments?roll_no=${encodeURIComponent(state.rollNumber)}`);
-      let data = res.data;
-      const enteredCode = (state.examCode || state.examId || '').trim();
-      const matchExam = (item) => {
-        if (!item) return false;
-        const codeUpper = enteredCode.toUpperCase();
-        if (item.exam_id && (item.exam_id === enteredCode || item.exam_id.toUpperCase() === codeUpper)) return true;
-        if (item.exam_code && item.exam_code.toUpperCase() === codeUpper) return true;
-        return false;
-      };
-
-      if (data && !Array.isArray(data)) {
-        assignments = (data.assignments || []).filter(matchExam);
-      } else {
-        assignments = (data || []).filter(matchExam);
+    // 1. Locate matching attempt
+    let activeAtt = null;
+    if (attempts.length > 0) {
+      // Find matching attempt by exam_code
+      activeAtt = attempts.find(a => a.exam_code && a.exam_code.toUpperCase() === enteredUpper);
+      // Find by exam_id
+      if (!activeAtt) {
+        activeAtt = attempts.find(a => a.exam_id && (a.exam_id === enteredCode || a.exam_id.toUpperCase() === enteredUpper));
       }
-      if (assignments.length > 0) {
-        hasRealAssignments = true;
-        
-        const activeAtt = (data && !Array.isArray(data) && data.attempts) ? data.attempts.find(matchExam) : null;
-        if (activeAtt) {
-          if (activeAtt.exam_code) state.examCode = activeAtt.exam_code;
-          if (activeAtt.exam_id) state.examId = activeAtt.exam_id;
-          if (activeAtt.status === 'submitted') {
-            throw new Error('You have already submitted this exam. Access locked.');
-          }
-        }
-
-        examLabel.textContent = activeAtt && activeAtt.exam_title ? `Exam: ${activeAtt.exam_title}` : `Assigned Lab Exam`;
-        if (activeAtt) {
-          state.questions = activeAtt.questions.map((q) => ({
-            id: q.id, // the assignment record ID
-            number: q.number,
-            title: `Question ${q.number}`,
-            prompt: q.question_text,
-            response: q.response || '',
-            attachmentUrls: q.attachment_urls || []
-          }));
-        } else {
-          // Fallback to legacy assignments mapping
-          state.questions = assignments.map((a, idx) => ({
-            id: a.id,
-            number: idx + 1,
-            title: `Question ${idx + 1}`,
-            prompt: a.question_text,
-            response: a.response || '',
-            attachmentUrls: []
-          }));
-        }
-        try {
-          await api('/api/attempts/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              student_roll_no: state.rollNumber,
-              exam_code: state.examCode || state.examId,
-              exam_id: state.examId
-            })
-          });
-          console.log('[Attempts] Exam session started.');
-        } catch (err) {
-          console.warn('[Attempts] Failed to start attempt:', err.message);
-        }
+      // Find by attempt id
+      if (!activeAtt) {
+        activeAtt = attempts.find(a => a.id === enteredCode);
       }
-    } catch (e) {
-      console.warn('[Attempts] Failed to load server assignments:', e.message);
-      if (e.message && e.message.includes('already submitted')) {
-        throw e;
+      // If student has exactly 1 attempt and code is empty or 'exam-1' or default, use that attempt!
+      if (!activeAtt && attempts.length === 1 && (!enteredCode || enteredCode.toLowerCase() === 'exam-1')) {
+        activeAtt = attempts[0];
       }
     }
 
-    if (!hasRealAssignments) {
-      // If a regular student has no assignments, throw an error
-      throw new Error('No assignments found for this roll number and Exam Code');
+    if (activeAtt) {
+      if (activeAtt.status === 'submitted') {
+        throw new Error('You have already submitted this exam. Access locked.');
+      }
+      state.activeAttemptId = activeAtt.id;
+      state.examId = activeAtt.exam_id;
+      state.examCode = activeAtt.exam_code || enteredCode;
+      examLabel.textContent = activeAtt.exam_title ? `Exam: ${activeAtt.exam_title}` : `Assigned Lab Exam`;
+
+      if (activeAtt.questions && activeAtt.questions.length > 0) {
+        state.questions = activeAtt.questions.map((q) => ({
+          id: q.id,
+          number: q.number,
+          title: `Question ${q.number}`,
+          prompt: q.question_text,
+          response: q.response || '',
+          attachmentUrls: q.attachment_urls || []
+        }));
+      } else {
+        // Fallback to filtering rawAssignments
+        const matchingAssignments = rawAssignments.filter(a => a.attempt_id === activeAtt.id || a.exam_id === activeAtt.exam_id);
+        state.questions = matchingAssignments.map((a, idx) => ({
+          id: a.id,
+          number: idx + 1,
+          title: `Question ${idx + 1}`,
+          prompt: a.question_text,
+          response: a.response || '',
+          attachmentUrls: []
+        }));
+      }
+
+      // Notify backend that attempt has started
+      try {
+        await api('/api/attempts/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_roll_no: state.rollNumber,
+            attempt_id: state.activeAttemptId,
+            exam_id: state.examId,
+            exam_code: state.examCode
+          })
+        });
+        console.log('[Attempts] Exam session started.');
+      } catch (err) {
+        console.warn('[Attempts] Failed to start attempt:', err.message);
+      }
+    } else {
+      // Legacy fallback: match raw assignments if attempts array not present
+      const matchedAssignments = rawAssignments.filter(a => 
+        (a.exam_id && (a.exam_id === enteredCode || a.exam_id.toUpperCase() === enteredUpper)) ||
+        (a.exam_code && a.exam_code.toUpperCase() === enteredUpper)
+      );
+      if (matchedAssignments.length > 0) {
+        state.questions = matchedAssignments.map((a, idx) => ({
+          id: a.id,
+          number: idx + 1,
+          title: `Question ${idx + 1}`,
+          prompt: a.question_text,
+          response: a.response || '',
+          attachmentUrls: []
+        }));
+      } else {
+        throw new Error(`No active exam found for code "${enteredCode}". Please check your Exam Code with faculty.`);
+      }
+    }
+
+    if (!state.questions || state.questions.length === 0) {
+      throw new Error('No questions found in this exam paper. Please contact the invigilator.');
     }
 
     state.drafts = {};
@@ -1473,10 +1491,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Select All Students Checkbox handling
+  // Select All Students Button / Checkbox handling
+  const toggleSelectAllBtn = el('toggleSelectAllBtn');
   const selectAllCb = el('selectAllStudentsCheckbox');
-  if (selectAllCb) {
-    selectAllCb.addEventListener('change', () => {
+  if (toggleSelectAllBtn && selectAllCb) {
+    toggleSelectAllBtn.addEventListener('click', (e) => {
+      if (e.target !== selectAllCb) {
+        selectAllCb.checked = !selectAllCb.checked;
+      }
       const query = (el('searchStudentInput')?.value || '').toLowerCase().trim();
       const all = state.currentClassStudents || [];
       const visible = all.filter((std) => {
@@ -1780,12 +1802,13 @@ const loadExamDetails = async (examId) => {
 };
 
 const renderStudentRosterTable = (studentsList) => {
-  const container = el('studentsRosterList');
+  const tbody = el('studentsRosterList');
   const countBadge = el('selectedStudentsCountBadge');
   const totalBadge = el('totalStudentsCountBadge');
   const btnBadge = el('assignBtnCountBadge');
   const selectAllCb = el('selectAllStudentsCheckbox');
-  if (!container) return;
+  const selectAllText = el('selectAllBtnText');
+  if (!tbody) return;
 
   state.selectedStudentRolls = state.selectedStudentRolls || new Set();
 
@@ -1793,7 +1816,7 @@ const renderStudentRosterTable = (studentsList) => {
   if (totalBadge) totalBadge.textContent = totalCount;
 
   if (!studentsList || studentsList.length === 0) {
-    container.innerHTML = `<div style="padding: 12px; text-align: center; color: #71717a; font-size: 0.85rem;">No matching students found.</div>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="padding: 16px; text-align: center; color: #64748b; font-size: 0.85rem;">No matching students found.</td></tr>`;
     if (countBadge) countBadge.textContent = state.selectedStudentRolls.size;
     if (btnBadge) btnBadge.textContent = state.selectedStudentRolls.size;
     if (selectAllCb) {
@@ -1812,26 +1835,30 @@ const renderStudentRosterTable = (studentsList) => {
     });
   }
 
-  container.innerHTML = studentsList.map((std) => {
+  tbody.innerHTML = studentsList.map((std) => {
     const isSelected = state.selectedStudentRolls.has(std.roll_no);
     const existingSub = submissionsMap.get((std.roll_no || '').toUpperCase());
-    let statusBadge = '';
+    let statusBadge = `<span style="font-size: 0.75rem; color: #94a3b8; font-weight: 500;">Not Assigned</span>`;
     if (existingSub) {
       const pTitle = existingSub.paper_title || (existingSub.paper && existingSub.paper.title) || 'Assigned';
-      statusBadge = `<span style="font-size: 0.75rem; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; padding: 2px 6px; border-radius: 4px; font-weight: 600;">${pTitle}</span>`;
+      statusBadge = `<span style="font-size: 0.75rem; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; padding: 2px 8px; border-radius: 6px; font-weight: 600; white-space: nowrap;">${pTitle}</span>`;
     }
 
     return `
-      <label class="student-roster-row" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 6px; cursor: pointer; user-select: none; transition: background 0.15s ease; ${isSelected ? 'background: #eff6ff; border: 1px solid #bfdbfe;' : 'background: #ffffff; border: 1px solid #f4f4f5;'}">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" class="student-roster-cb" data-roll="${std.roll_no}" ${isSelected ? 'checked' : ''} style="cursor: pointer;" />
-          <span style="font-weight: 600; color: #1f2937; font-size: 0.9rem;">${std.name}</span>
-          <span style="color: #6b7280; font-size: 0.85rem; font-family: monospace;">(${std.roll_no})</span>
-        </div>
-        <div>
+      <tr class="student-roster-row" data-roll="${std.roll_no}" style="border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background 0.15s ease; ${isSelected ? 'background: #eff6ff;' : 'background: #ffffff;'}">
+        <td style="padding: 8px 12px; width: 42px; text-align: center;">
+          <input type="checkbox" class="student-roster-cb" data-roll="${std.roll_no}" ${isSelected ? 'checked' : ''} style="cursor: pointer; width: 16px; height: 16px; margin: 0; padding: 0; vertical-align: middle;" />
+        </td>
+        <td style="padding: 8px 12px; font-family: monospace; font-weight: 700; color: #2563eb; width: 140px; white-space: nowrap;">
+          ${std.roll_no}
+        </td>
+        <td style="padding: 8px 12px; font-weight: 600; color: #1e293b; white-space: nowrap;">
+          ${std.name}
+        </td>
+        <td style="padding: 8px 12px; text-align: right; white-space: nowrap;">
           ${statusBadge}
-        </div>
-      </label>
+        </td>
+      </tr>
     `;
   }).join('');
 
@@ -1846,31 +1873,35 @@ const renderStudentRosterTable = (studentsList) => {
       if (selectedVisibleCount === 0) {
         selectAllCb.checked = false;
         selectAllCb.indeterminate = false;
+        if (selectAllText) selectAllText.textContent = 'Select All';
       } else if (selectedVisibleCount === visibleRolls.length) {
         selectAllCb.checked = true;
         selectAllCb.indeterminate = false;
+        if (selectAllText) selectAllText.textContent = 'Deselect All';
       } else {
         selectAllCb.checked = false;
         selectAllCb.indeterminate = true;
+        if (selectAllText) selectAllText.textContent = 'Select All';
       }
     }
   };
 
   updateSelectionUI();
 
-  // Wire checkbox change listeners
-  container.querySelectorAll('.student-roster-cb').forEach((cb) => {
-    cb.addEventListener('change', () => {
-      const roll = cb.dataset.roll;
+  // Wire row click & checkbox listeners
+  tbody.querySelectorAll('.student-roster-row').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      const roll = row.dataset.roll;
+      const cb = row.querySelector('.student-roster-cb');
+      if (e.target !== cb) {
+        cb.checked = !cb.checked;
+      }
       if (cb.checked) {
         state.selectedStudentRolls.add(roll);
+        row.style.background = '#eff6ff';
       } else {
         state.selectedStudentRolls.delete(roll);
-      }
-      const row = cb.closest('.student-roster-row');
-      if (row) {
-        row.style.background = cb.checked ? '#eff6ff' : '#ffffff';
-        row.style.border = cb.checked ? '1px solid #bfdbfe' : '1px solid #f4f4f5';
+        row.style.background = '#ffffff';
       }
       updateSelectionUI();
     });
@@ -2299,50 +2330,72 @@ loginForm.addEventListener('submit', async (event) => {
   try {
     let data;
     if (mode === 'student') {
-      const rollNumber = formData.get('rollNumber');
-      const name = formData.get('name');
+      const rollNumber = (formData.get('rollNumber') || '').trim();
+      const name = (formData.get('name') || '').trim();
+
+      if (!rollNumber) {
+        throw new Error('Please enter your Roll Number.');
+      }
 
       const enteredCode = (formData.get('examId') || '').trim();
+      const enteredUpper = enteredCode.toUpperCase();
       state.examId = enteredCode;
       state.examCode = enteredCode;
       localStorage.setItem('securemlexam_exam_id', enteredCode);
 
       const res = await api(`/api/assignments?roll_no=${encodeURIComponent(rollNumber)}`);
       const resData = res.data;
-      let assignments = [];
-      const matchExam = (item) => {
-        if (!item) return false;
-        const codeUpper = enteredCode.toUpperCase();
-        if (item.exam_id && (item.exam_id === enteredCode || item.exam_id.toUpperCase() === codeUpper)) return true;
-        if (item.exam_code && item.exam_code.toUpperCase() === codeUpper) return true;
-        return false;
-      };
-
-      if (resData && !Array.isArray(resData)) {
-        assignments = (resData.assignments || []).filter(matchExam);
-        if (resData.attempts && resData.attempts.length > 0) {
-          const hasSubmitted = resData.attempts.some(att => matchExam(att) && att.status === 'submitted');
-          if (hasSubmitted) {
-            throw new Error('You have already submitted this exam. Access locked.');
-          }
-          const matchedAttempt = resData.attempts.find(matchExam);
-          if (matchedAttempt) {
-            if (matchedAttempt.exam_code) state.examCode = matchedAttempt.exam_code;
-            if (matchedAttempt.exam_id) state.examId = matchedAttempt.exam_id;
-          }
-        }
-      } else {
-        assignments = (resData || []).filter(matchExam);
+      if (!resData) {
+        throw new Error('Could not retrieve student assignments from server.');
       }
 
-      if (assignments.length === 0) {
-        throw new Error('No assignments found for this roll number and Exam Code');
+      const attempts = resData.attempts || [];
+      const rawAssignments = Array.isArray(resData) ? resData : (resData.assignments || []);
+
+      let matchedAttempt = null;
+      if (attempts.length > 0) {
+        // 1. Try matching by exam_code
+        matchedAttempt = attempts.find(a => a.exam_code && a.exam_code.toUpperCase() === enteredUpper);
+        // 2. Try matching by exam_id
+        if (!matchedAttempt) {
+          matchedAttempt = attempts.find(a => a.exam_id && (a.exam_id === enteredCode || a.exam_id.toUpperCase() === enteredUpper));
+        }
+        // 3. Try matching by attempt id
+        if (!matchedAttempt) {
+          matchedAttempt = attempts.find(a => a.id === enteredCode);
+        }
+        // 4. Fallback if student has only 1 attempt
+        if (!matchedAttempt && attempts.length === 1 && (!enteredCode || enteredCode.toLowerCase() === 'exam-1')) {
+          matchedAttempt = attempts[0];
+        }
+      }
+
+      if (matchedAttempt) {
+        if (matchedAttempt.status === 'submitted') {
+          throw new Error('You have already submitted this exam. Access locked.');
+        }
+        state.activeAttemptId = matchedAttempt.id;
+        state.examId = matchedAttempt.exam_id;
+        state.examCode = matchedAttempt.exam_code || enteredCode;
+        localStorage.setItem('securemlexam_attempt_id', state.activeAttemptId);
+      } else {
+        // Fallback: Check raw assignments
+        const matchedAssignments = rawAssignments.filter(a => 
+          (a.exam_id && (a.exam_id === enteredCode || a.exam_id.toUpperCase() === enteredUpper)) ||
+          (a.exam_code && a.exam_code.toUpperCase() === enteredUpper)
+        );
+        if (matchedAssignments.length === 0) {
+          if (attempts.length === 0 && rawAssignments.length === 0) {
+            throw new Error(`No exams assigned to Roll Number "${rollNumber}". Please contact faculty.`);
+          }
+          throw new Error(`No active exam found for code "${enteredCode}". Please check your Exam Code.`);
+        }
       }
 
       data = {
         token: 'student_session',
         role: 'student',
-        name: name || 'Student',
+        name: name || (resData.student && resData.student.name) || 'Student',
         rollNumber: rollNumber
       };
     } else if (mode === 'faculty') {

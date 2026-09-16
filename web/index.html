@@ -358,39 +358,50 @@
               </div>
 
               <!-- Assign set to student -->
-              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-top: 1.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div style="background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 14px; padding: 18px; margin-top: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
                   <div>
-                    <h5 style="margin: 0; font-size: 1rem; color: #18181b;">Assign Paper Set to Students</h5>
-                    <p style="color: #71717a; font-size: 0.85rem; margin: 2px 0 0 0;">Select students from the roster to assign this question paper set.</p>
+                    <h5 style="margin: 0; font-size: 1rem; font-weight: 700; color: #18181b;">Assign Question Paper Set</h5>
+                    <p style="color: #71717a; font-size: 0.85rem; margin: 2px 0 0 0;">Select students from this class roster to assign the active paper set.</p>
                   </div>
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 0.85rem; font-weight: 600; color: #4b5563;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 0.85rem; font-weight: 600; color: #4b5563; background: #f4f4f5; padding: 4px 10px; border-radius: 6px; border: 1px solid #e4e4e7;">
                       Selected: <strong id="selectedStudentsCountBadge" style="color: #2563eb;">0</strong> / <span id="totalStudentsCountBadge">0</span>
                     </span>
                   </div>
                 </div>
 
-                <div style="margin-top: 12px; display: flex; gap: 10px; align-items: center;">
+                <!-- Search and Bulk Action Row -->
+                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 12px;">
                   <div style="flex: 1; position: relative;">
-                    <input id="searchStudentInput" type="text" placeholder="Search by student name or roll number..." style="background: #ffffff !important; border: 1.5px solid #e4e4e7 !important; border-radius: 8px; padding: 8px 12px; width: 100%; font-size: 0.9rem;" autocomplete="off" />
+                    <input id="searchStudentInput" type="text" placeholder="Search by name or roll number..." style="background: #ffffff !important; border: 1.5px solid #cbd5e1 !important; border-radius: 8px; padding: 8px 14px; width: 100%; font-size: 0.9rem;" autocomplete="off" />
                   </div>
-                  <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-size: 0.85rem; font-weight: 600; color: #374151; background: #ffffff; border: 1.5px solid #e4e4e7; padding: 7px 12px; border-radius: 8px;">
-                    <input type="checkbox" id="selectAllStudentsCheckbox" style="cursor: pointer;" />
-                    <span>Select All</span>
-                  </label>
+                  <button id="toggleSelectAllBtn" type="button" class="secondary" style="white-space: nowrap; padding: 8px 14px; font-size: 0.85rem; font-weight: 600; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; height: 38px;">
+                    <input type="checkbox" id="selectAllStudentsCheckbox" style="cursor: pointer; width: 15px; height: 15px; margin: 0; padding: 0;" />
+                    <span id="selectAllBtnText">Select All</span>
+                  </button>
                 </div>
 
-                <!-- Scrollable Students Roster Box -->
-                <div id="studentsRosterContainer" style="margin-top: 10px; max-height: 220px; overflow-y: auto; background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 8px; padding: 6px;">
-                  <div id="studentsRosterList" style="display: flex; flex-direction: column; gap: 4px;">
-                    <!-- Dynamically populated with student checkboxes -->
-                  </div>
+                <!-- Scrollable Students Roster Table Box -->
+                <div id="studentsRosterContainer" style="max-height: 250px; overflow-y: auto; background: #ffffff; border: 1.5px solid #e4e4e7; border-radius: 8px;">
+                  <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                    <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 2; border-bottom: 1.5px solid #e2e8f0;">
+                      <tr style="color: #64748b; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <th style="padding: 8px 12px; width: 42px; text-align: center;"></th>
+                        <th style="padding: 8px 12px; font-weight: 700; width: 140px;">Roll Number</th>
+                        <th style="padding: 8px 12px; font-weight: 700;">Student Name</th>
+                        <th style="padding: 8px 12px; font-weight: 700; text-align: right;">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="studentsRosterList" style="color: #1e293b;">
+                      <!-- Dynamically populated with student rows -->
+                    </tbody>
+                  </table>
                 </div>
 
                 <!-- Bulk Assign Action Button & Feedback -->
-                <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                  <button id="assignSetToStudentBtn" class="primary" type="button" style="padding: 10px 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
+                <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                  <button id="assignSetToStudentBtn" class="primary" type="button" style="padding: 9px 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px; font-size: 0.9rem;">
                     <span>Assign Set to Selected Students</span>
                     <span id="assignBtnCountBadge" style="background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 9999px; font-size: 0.8rem;">0</span>
                   </button>
