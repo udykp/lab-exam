@@ -287,6 +287,14 @@ function disableSuperKey() {
   exec("gsettings set org.gnome.shell.keybindings toggle-overview \"[]\"", () => {});
   exec("gsettings set org.gnome.desktop.wm.keybindings panel-run-dialog \"[]\"", () => {});
 
+  // Disable Show Desktop (Win+D, Super+D, Super+H, Ctrl+Alt+D)
+  exec("gsettings set org.gnome.desktop.wm.keybindings show-desktop \"[]\"", () => {});
+  exec("gsettings set org.gnome.desktop.wm.keybindings minimize \"[]\"", () => {});
+  exec("gsettings set org.gnome.desktop.wm.keybindings hide-window \"[]\"", () => {});
+  exec("gsettings set org.gnome.shell.keybindings toggle-application-view \"[]\"", () => {});
+  exec("gsettings set org.gnome.shell.keybindings toggle-message-tray \"[]\"", () => {});
+  exec("gsettings set org.gnome.shell.keybindings focus-active-notification \"[]\"", () => {});
+
   // Disable Alt+Tab (switching applications and windows)
   exec("gsettings set org.gnome.desktop.wm.keybindings switch-applications \"[]\"", () => {});
   exec("gsettings set org.gnome.desktop.wm.keybindings switch-windows \"[]\"", () => {});
@@ -351,6 +359,14 @@ function restoreSuperKey() {
   });
   exec("gsettings reset org.gnome.shell.keybindings toggle-overview", () => {});
   exec("gsettings reset org.gnome.desktop.wm.keybindings panel-run-dialog", () => {});
+
+  // Restore Show Desktop and Window controls
+  exec("gsettings reset org.gnome.desktop.wm.keybindings show-desktop", () => {});
+  exec("gsettings reset org.gnome.desktop.wm.keybindings minimize", () => {});
+  exec("gsettings reset org.gnome.desktop.wm.keybindings hide-window", () => {});
+  exec("gsettings reset org.gnome.shell.keybindings toggle-application-view", () => {});
+  exec("gsettings reset org.gnome.shell.keybindings toggle-message-tray", () => {});
+  exec("gsettings reset org.gnome.shell.keybindings focus-active-notification", () => {});
 
   // Restore Alt+Tab
   exec("gsettings reset org.gnome.desktop.wm.keybindings switch-applications", () => {});
@@ -762,9 +778,10 @@ except:
     pass
 `;
       fs.writeFileSync(pyFile, overridePrefix + code, 'utf8');
-      runResult = await spawnAndStream(event, pythonExecutable, ['-s', '-u', 'solution.py'], {
+      const pythonEnv = { ...process.env, MPLBACKEND: 'Agg' };
+      runResult = await spawnAndStream(event, pythonExecutable, ['-u', 'solution.py'], {
         cwd: runDir,
-        env: { ...process.env, MPLBACKEND: 'Agg' }
+        env: pythonEnv
       });
     }
 
