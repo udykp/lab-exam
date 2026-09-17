@@ -16,23 +16,91 @@ const os = require('os');
 const venvPath = path.join(os.homedir(), '.securemlexam-venv');
 let pythonExecutable = 'python3';
 
+function getUnifiedPythonPath() {
+  const paths = [];
+  const homeDir = os.homedir();
+
+  if (process.env.PYTHONPATH) {
+    paths.push(...process.env.PYTHONPATH.split(path.delimiter));
+  }
+
+  const systemPaths = [
+    '/usr/lib/python3/dist-packages',
+    '/usr/local/lib/python3/dist-packages',
+    '/usr/lib/python3.10/dist-packages',
+    '/usr/lib/python3.11/dist-packages',
+    '/usr/lib/python3.12/dist-packages',
+    '/usr/lib/python3.13/dist-packages',
+    '/usr/lib/python3.14/dist-packages',
+    '/usr/local/lib/python3.10/dist-packages',
+    '/usr/local/lib/python3.11/dist-packages',
+    '/usr/local/lib/python3.12/dist-packages',
+    '/usr/local/lib/python3.13/dist-packages',
+    '/usr/local/lib/python3.14/dist-packages',
+  ];
+
+  for (const ver of ['3.10', '3.11', '3.12', '3.13', '3.14', '3.8', '3.9']) {
+    systemPaths.push(path.join(homeDir, '.local', 'lib', `python${ver}`, 'site-packages'));
+    systemPaths.push(path.join(venvPath, 'lib', `python${ver}`, 'site-packages'));
+  }
+
+  const condaDirs = ['miniconda3', 'anaconda3', 'miniforge3', 'mambaforge'];
+  for (const cd of condaDirs) {
+    for (const ver of ['3.12', '3.11', '3.10', '3.9']) {
+      systemPaths.push(path.join(homeDir, cd, 'lib', `python${ver}`, 'site-packages'));
+    }
+  }
+
+  const uniquePaths = new Set();
+  paths.forEach(p => { if (p && fs.existsSync(p)) uniquePaths.add(p); });
+  systemPaths.forEach(p => { if (p && fs.existsSync(p)) uniquePaths.add(p); });
+
+  return Array.from(uniquePaths).join(path.delimiter);
+}
+
 function ensureVenv() {
   return new Promise((resolve) => {
     const venvBin = process.platform === 'win32' ? path.join(venvPath, 'Scripts', 'python.exe') : path.join(venvPath, 'bin', 'python3');
+
+    const checkAndInstallPackages = (pythonBin) => {
+      const testCmd = `"${pythonBin}" -c "import numpy, pandas, matplotlib, scipy, sklearn"`;
+      const envWithPythonPath = { ...process.env, PYTHONPATH: getUnifiedPythonPath() };
+
+      const { exec } = require('child_process');
+      exec(testCmd, { env: envWithPythonPath }, (err) => {
+        if (!err) {
+          console.log(`[Venv] Core data science packages verified for ${pythonBin}.`);
+          resolve(pythonBin);
+          return;
+        }
+
+        console.log(`[Venv] Missing core packages. Running background self-healing installation...`);
+        exec(`"${pythonBin}" -m pip install numpy pandas matplotlib scipy scikit-learn openpyxl --no-warn-script-location`, { env: envWithPythonPath }, (pipErr) => {
+          if (pipErr) {
+            console.warn('[Venv] Self-healing pip install notice:', pipErr.message);
+          } else {
+            console.log('[Venv] Self-healing pip install completed successfully!');
+          }
+          resolve(pythonBin);
+        });
+      });
+    };
+
     if (fs.existsSync(venvBin)) {
       console.log(`[Venv] Virtual environment found at: ${venvBin}`);
-      resolve(venvBin);
+      checkAndInstallPackages(venvBin);
       return;
     }
+
     console.log(`[Venv] Creating virtual environment at: ${venvPath}...`);
     const { exec } = require('child_process');
     exec(`python3 -m venv --system-site-packages "${venvPath}"`, (err) => {
-      if (err) {
-        console.error('[Venv] Failed to create virtual environment:', err.message);
+      if (err || !fs.existsSync(venvBin)) {
+        console.warn('[Venv] Virtual environment creation skipped/failed. Using system python3 with unified PYTHONPATH:', err ? err.message : 'no binary');
         resolve('python3');
       } else {
         console.log(`[Venv] Virtual environment created successfully.`);
-        resolve(venvBin);
+        checkAndInstallPackages(venvBin);
       }
     });
   });
@@ -778,7 +846,12 @@ except:
     pass
 `;
       fs.writeFileSync(pyFile, overridePrefix + code, 'utf8');
-      const pythonEnv = { ...process.env, MPLBACKEND: 'Agg' };
+      const pythonEnv = {
+        ...process.env,
+        MPLBACKEND: 'Agg',
+        PYTHONPATH: getUnifiedPythonPath(),
+        PYTHONUNBUFFERED: '1'
+      };
       runResult = await spawnAndStream(event, pythonExecutable, ['-u', 'solution.py'], {
         cwd: runDir,
         env: pythonEnv

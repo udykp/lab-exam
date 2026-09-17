@@ -61,6 +61,18 @@ fi
 # 5. Ensure scripts are executable
 chmod +x "$APP_DIR"/*.sh 2>/dev/null || true
 
+# 5.5 Fast Python self-healing check (pre-caches packages if missing)
+if ! python3 -c "import numpy, pandas, matplotlib, scipy, sklearn" >/dev/null 2>&1; then
+  echo "Pre-caching missing Python packages in ~/.securemlexam-venv..."
+  VENV_PATH="$HOME/.securemlexam-venv"
+  if [ ! -d "$VENV_PATH" ]; then
+    python3 -m venv --system-site-packages "$VENV_PATH" 2>/dev/null || true
+  fi
+  if [ -f "$VENV_PATH/bin/pip" ]; then
+    "$VENV_PATH/bin/pip" install --quiet --no-warn-script-location numpy pandas matplotlib scipy scikit-learn openpyxl 2>/dev/null || true
+  fi
+fi
+
 # 6. Refresh desktop launcher and links
 if [ -f "$APP_DIR/install_app.sh" ]; then
   "$APP_DIR/install_app.sh" >/dev/null 2>&1 || true
