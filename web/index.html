@@ -679,8 +679,8 @@
   </div>
 
   <!-- Expanded PDF Document Viewer for Students -->
-  <div id="pdfViewerModal" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.96); z-index: 100004; display: flex; flex-direction: column; padding: 20px 32px; backdrop-filter: blur(12px); user-select: none; -webkit-user-select: none;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 16px;">
+  <div id="pdfViewerModal" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.96); z-index: 100004; display: flex; flex-direction: column; padding: 20px 32px; backdrop-filter: blur(12px); user-select: none; -webkit-user-select: none; height: 100vh; box-sizing: border-box; overflow: hidden;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 16px; flex-shrink: 0;">
       <div style="display: flex; align-items: center; gap: 10px;">
         <span id="pdfModalTitle" style="font-size: 1.05rem; font-weight: 700; color: #ffffff; font-family: 'JetBrains Mono', monospace;">Document Viewer</span>
         <span style="font-size: 0.75rem; color: #94a3b8; background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); font-weight: 600;">PDF</span>
@@ -693,8 +693,8 @@
         <button id="closePdfModalBtn" type="button" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; cursor: pointer; padding: 6px 16px; border-radius: 8px; font-weight: 700; font-size: 0.88rem; transition: all 0.2s;">Close (✕)</button>
       </div>
     </div>
-    <div id="pdfModalFrameWrapper" style="flex: 1; width: 100%; background: #18181b; border: 1px solid var(--panel-border); border-radius: 10px; overflow: auto; position: relative;">
-      <div id="pdfModalCanvasContainer" class="pdf-canvas-container" style="min-height: 100%; display: flex; flex-direction: column; align-items: center; padding: 24px;"></div>
+    <div id="pdfModalFrameWrapper" style="flex: 1 1 0%; min-height: 0; width: 100%; background: #18181b; border: 1px solid var(--panel-border); border-radius: 10px; overflow-y: auto; overflow-x: auto; position: relative; box-sizing: border-box;">
+      <div id="pdfModalCanvasContainer" class="pdf-canvas-container" style="min-height: 100%; display: flex; flex-direction: column; align-items: center; padding: 24px; box-sizing: border-box;"></div>
     </div>
   </div>
 

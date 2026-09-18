@@ -1411,34 +1411,62 @@ async function getPdfDocument(pdfSource) {
 
 async function renderPdfPagesToContainer(container, pdfDoc, scale = 1.0, fitWidth = true) {
   if (!container || !pdfDoc) return;
+
+  // Concurrency & Cancellation Management
+  const renderId = (container._currentRenderId = (container._currentRenderId || 0) + 1);
+
+  if (container._activeRenderTasks && Array.isArray(container._activeRenderTasks)) {
+    for (const task of container._activeRenderTasks) {
+      try {
+        if (task && typeof task.cancel === 'function') task.cancel();
+      } catch (e) {
+        // ignore cancellation errors
+      }
+    }
+  }
+  container._activeRenderTasks = [];
+
   container.innerHTML = '<div class="pdf-loading-indicator"><div class="pdf-loading-spinner"></div><span>Rendering document...</span></div>';
 
   try {
     const numPages = pdfDoc.numPages;
-    const pageFragments = [];
+    if (numPages === 0) {
+      container.innerHTML = '<div style="padding: 24px; color: var(--muted); text-align: center;">Empty document</div>';
+      return;
+    }
+
+    // Determine container available width upfront before DOM changes or scrollbar shifts
+    const parent = container.closest('.pdf-frame-wrapper') || container.parentElement || container;
+    const parentWidth = parent ? parent.clientWidth : container.clientWidth;
+    const availableWidth = Math.max(280, (parentWidth || 600) - 36);
+
+    const firstPage = await pdfDoc.getPage(1);
+    if (container._currentRenderId !== renderId) return;
+
+    const firstPageBaseViewport = firstPage.getViewport({ scale: 1.0 });
+    const uniformFitRatio = fitWidth ? (availableWidth / firstPageBaseViewport.width) : 1.0;
+
+    const outputScale = Math.min(2.0, window.devicePixelRatio || 1);
+    const renderedCards = [];
 
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      const page = await pdfDoc.getPage(pageNum);
+      if (container._currentRenderId !== renderId) return;
+
+      const page = (pageNum === 1) ? firstPage : await pdfDoc.getPage(pageNum);
+      if (container._currentRenderId !== renderId) return;
+
       const baseViewport = page.getViewport({ scale: 1.0 });
-
-      let effectiveScale = scale;
-      if (fitWidth) {
-        const parentWidth = container.parentElement ? container.parentElement.clientWidth : container.clientWidth;
-        const availableWidth = Math.max(300, (parentWidth || 600) - 48);
-        const fitScale = availableWidth / baseViewport.width;
-        effectiveScale = fitScale * scale;
-      }
-
-      const viewport = page.getViewport({ scale: effectiveScale });
-      const outputScale = Math.min(2.0, window.devicePixelRatio || 1);
+      const pageScale = (fitWidth ? (availableWidth / baseViewport.width) : 1.0) * scale;
+      const viewport = page.getViewport({ scale: pageScale });
 
       const pageCard = document.createElement('div');
       pageCard.className = 'pdf-page-card no-copy-zone';
       pageCard.style.width = `${Math.floor(viewport.width)}px`;
+      pageCard.style.height = `${Math.floor(viewport.height)}px`;
 
       if (numPages > 1) {
         const pageBadge = document.createElement('div');
-        pageBadge.style.cssText = 'position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; pointer-events: none; z-index: 10;';
+        pageBadge.style.cssText = 'position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.75); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; pointer-events: none; z-index: 10;';
         pageBadge.textContent = `Page ${pageNum} of ${numPages}`;
         pageCard.appendChild(pageBadge);
       }
@@ -1456,19 +1484,43 @@ async function renderPdfPagesToContainer(container, pdfDoc, scale = 1.0, fitWidt
       const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
 
       pageCard.appendChild(canvas);
-      pageFragments.push({ page, pageCard, canvasContext: ctx, transform, viewport });
+      renderedCards.push({ page, pageCard, ctx, transform, viewport });
     }
 
+    if (container._currentRenderId !== renderId) return;
+
     container.innerHTML = '';
-    for (const item of pageFragments) {
-      container.appendChild(item.pageCard);
-      await item.page.render({
-        canvasContext: item.canvasContext,
+    const fragment = document.createDocumentFragment();
+    for (const item of renderedCards) {
+      fragment.appendChild(item.pageCard);
+    }
+    container.appendChild(fragment);
+
+    for (const item of renderedCards) {
+      if (container._currentRenderId !== renderId) return;
+
+      const renderTask = item.page.render({
+        canvasContext: item.ctx,
         transform: item.transform,
         viewport: item.viewport
-      }).promise;
+      });
+
+      container._activeRenderTasks.push(renderTask);
+
+      try {
+        await renderTask.promise;
+      } catch (err) {
+        if (err && (err.name === 'RenderingCancelledException' || err.message === 'Rendering cancelled')) {
+          return;
+        }
+        throw err;
+      }
     }
   } catch (err) {
+    if (container._currentRenderId !== renderId) return;
+    if (err && (err.name === 'RenderingCancelledException' || err.message === 'Rendering cancelled')) {
+      return;
+    }
     console.error('Failed to render PDF pages:', err);
     container.innerHTML = `<div style="padding: 24px; color: #ef4444; text-align: center;">Failed to render document: ${err.message || err}</div>`;
   }
