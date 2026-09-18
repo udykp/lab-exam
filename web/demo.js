@@ -841,7 +841,7 @@ const renderCellOutputHtml = (output, cellId) => {
             <div style="display: flex; align-items: center; gap: 8px;">
               <span class="sql-table-tag">📊 Result Table</span>
               <span class="sql-row-count">${tableData.rows.length} row${tableData.rows.length === 1 ? '' : 's'}</span>
-              <span class="sql-exec-time">⏱️ ${output.executionTimeMs || 0}ms</span>
+              <span class="sql-exec-time">${output.executionTimeMs || 0}ms</span>
             </div>
             <div class="sql-view-switch">
               <button type="button" class="sql-view-btn active" data-view="table" title="View formatted HTML table">Table</button>
@@ -857,8 +857,8 @@ const renderCellOutputHtml = (output, cellId) => {
             </div>
           </div>
           <div class="sql-raw-view-container" style="display: none;">
-            <div class="sql-table-scroll" style="padding: 10px; background: #f8fafc;">
-              <pre class="sql-output-pre" style="margin: 0; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: #1e293b;">${escapeHtml(raw)}</pre>
+            <div class="sql-table-scroll" style="padding: 10px;">
+              <pre class="sql-output-pre" style="margin: 0; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: var(--text);">${escapeHtml(raw)}</pre>
             </div>
           </div>
         </div>
@@ -868,23 +868,21 @@ const renderCellOutputHtml = (output, cellId) => {
         <div class="sql-output-card" data-output-cell-id="${cellId || ''}">
           <div class="sql-output-meta">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="sql-table-tag" style="background: #f1f5f9; color: #475569; border-color: #cbd5e1;">📄 Output</span>
-              <span class="sql-exec-time">⏱️ ${output.executionTimeMs || 0}ms</span>
+              <span class="sql-table-tag">Output</span>
+              <span class="sql-exec-time">${output.executionTimeMs || 0}ms</span>
             </div>
           </div>
-          <div class="sql-table-scroll" style="padding: 10px; background: #f8fafc;">
-            <pre class="sql-output-pre" style="margin: 0; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: #1e293b;">${escapeHtml(raw)}</pre>
+          <div class="sql-table-scroll" style="padding: 10px;">
+            <pre class="sql-output-pre" style="margin: 0; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: var(--text);">${escapeHtml(raw)}</pre>
           </div>
         </div>
       `;
     }
   } else {
     return `
-      <div class="sql-output-error" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 14px;">
-        <div style="font-weight: 700; color: #b91c1c; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; font-size: 0.84rem;">
-          <span>❌ MySQL Execution Error</span>
-        </div>
-        <div style="font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: #991b1b; line-height: 1.5; white-space: pre-wrap;">${escapeHtml(output.error || 'Unknown MySQL error')}</div>
+      <div class="sql-output-error">
+        <div class="sql-output-error-head">MySQL Execution Error</div>
+        <div class="sql-output-error-body">${escapeHtml(output.error || 'Unknown MySQL error')}</div>
       </div>
     `;
   }

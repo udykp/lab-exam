@@ -60,7 +60,7 @@ if command -v mysql &>/dev/null; then
   echo "Initializing 'labexam' database and dedicated user 'exam_user'..."
   sudo mysql -u root -e "CREATE DATABASE IF NOT EXISTS labexam;" 2>/dev/null || true
   sudo mysql -u root -e "CREATE USER IF NOT EXISTS 'exam_user'@'localhost' IDENTIFIED BY 'exam_password';" 2>/dev/null || true
-  sudo mysql -u root -e "GRANT ALL PRIVILEGES ON labexam.* TO 'exam_user'@'localhost';" 2>/dev/null || true
+  sudo mysql -u root -e "GRANT ALL PRIVILEGES ON *.* TO 'exam_user'@'localhost';" 2>/dev/null || true
   sudo mysql -u root -e "FLUSH PRIVILEGES;" 2>/dev/null || true
 fi
 

@@ -1143,7 +1143,7 @@ ipcMain.handle('reset-sql-database', async () => {
     (async () => {
       try {
         // 1. Try sudo mysql first to drop/recreate labexam cleanly
-        await runSql('sudo mysql', "DROP DATABASE IF EXISTS labexam; CREATE DATABASE labexam; GRANT ALL PRIVILEGES ON labexam.* TO 'exam_user'@'localhost'; FLUSH PRIVILEGES;");
+        await runSql('sudo mysql', "DROP DATABASE IF EXISTS labexam; CREATE DATABASE labexam; GRANT ALL PRIVILEGES ON *.* TO 'exam_user'@'localhost'; FLUSH PRIVILEGES;");
 
         // 2. Query all custom databases created by student (e.g. Uday, test, etc.)
         const customDbsRes = await runSql(
