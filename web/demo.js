@@ -316,11 +316,28 @@ const loadTabState = (index) => {
         const lower = file.filename.toLowerCase();
         const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
         const isTabular = lower.endsWith('.csv') || lower.endsWith('.tsv');
+        const isPdf = lower.endsWith('.pdf');
 
         if (isImage) {
           return `
             <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 12px;">
               <img class="student-attachment-image" src="${file.dataUrl}" alt="${file.filename}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid var(--panel-border); object-fit: contain; background: var(--bg-2); cursor: zoom-in;" />
+            </div>
+          `;
+        }
+
+        if (isPdf) {
+          return `
+            <div class="pdf-viewer-deck-card" style="display: flex; flex-direction: column; width: 100%; margin-top: 14px; background: var(--bg-2); border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden;">
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid var(--panel-border);">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-weight: 700; font-size: 0.85rem; color: var(--text);">Document: ${file.filename}</span>
+                  <span style="font-size: 0.72rem; color: var(--muted); background: var(--panel); padding: 2px 7px; border-radius: 5px; border: 1px solid var(--panel-border); font-weight: 600;">PDF</span>
+                </div>
+              </div>
+              <div style="width: 100%; height: 520px; background: #18181b;">
+                <iframe src="${file.dataUrl}#toolbar=1&navpanes=0" title="${file.filename}" style="width: 100%; height: 100%; border: none; display: block;" allowfullscreen></iframe>
+              </div>
             </div>
           `;
         }
@@ -341,8 +358,8 @@ const loadTabState = (index) => {
           <div class="dataset-resource-card">
             <div class="dataset-resource-info">
               <span class="dataset-resource-name">File: ${file.filename}</span>
+              <span class="dataset-resource-meta">Available in workspace as '${file.filename}'</span>
             </div>
-            <a href="${file.dataUrl}" download="${file.filename}" class="dataset-resource-btn" style="text-decoration: none;">Download &rarr;</a>
           </div>
         `;
       }).join('');
@@ -513,7 +530,7 @@ const renderTabs = () => {
 // Lightbox image viewer controllers
 const openImageLightbox = (src) => {
   el('lightboxImage').src = src;
-  el('lightboxDownloadBtn').href = src;
+  if (el('lightboxDownloadBtn')) el('lightboxDownloadBtn').href = src;
   el('imageLightboxModal').classList.remove('hidden');
 };
 

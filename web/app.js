@@ -1370,11 +1370,28 @@ const loadTabState = (index) => {
         const lower = filename.toLowerCase();
         const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
         const isTabular = lower.endsWith('.csv') || lower.endsWith('.tsv');
+        const isPdf = lower.endsWith('.pdf');
 
         if (isImage) {
           return `
             <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 12px;">
               <img class="student-attachment-image" src="${fullUrl}" alt="${cleanName}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid var(--panel-border); object-fit: contain; background: var(--bg-2); cursor: zoom-in;" />
+            </div>
+          `;
+        }
+
+        if (isPdf) {
+          return `
+            <div class="pdf-viewer-deck-card" style="display: flex; flex-direction: column; width: 100%; margin-top: 14px; background: var(--bg-2); border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden;">
+              <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid var(--panel-border);">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-weight: 700; font-size: 0.85rem; color: var(--text);">Document: ${cleanName}</span>
+                  <span style="font-size: 0.72rem; color: var(--muted); background: var(--panel); padding: 2px 7px; border-radius: 5px; border: 1px solid var(--panel-border); font-weight: 600;">PDF</span>
+                </div>
+              </div>
+              <div style="width: 100%; height: 520px; background: #18181b;">
+                <iframe src="${fullUrl}#toolbar=1&navpanes=0" title="${cleanName}" style="width: 100%; height: 100%; border: none; display: block;" allowfullscreen></iframe>
+              </div>
             </div>
           `;
         }
@@ -1395,8 +1412,8 @@ const loadTabState = (index) => {
           <div class="dataset-resource-card">
             <div class="dataset-resource-info">
               <span class="dataset-resource-name">File: ${cleanName}</span>
+              <span class="dataset-resource-meta">Available in workspace as '${cleanName}'</span>
             </div>
-            <a href="${fullUrl}" target="_blank" class="dataset-resource-btn" style="text-decoration: none;">Download &rarr;</a>
           </div>
         `;
       }).join('');

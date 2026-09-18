@@ -1011,6 +1011,20 @@ code {
   border-color: #2563eb;
 }
 
+.pdf-viewer-deck-card {
+  margin-top: 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transition: border-color 0.15s ease;
+}
+
+.pdf-viewer-deck-card:hover {
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
 .workspace-right-deck {
   flex: 1;
   min-width: 0;
