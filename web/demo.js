@@ -120,29 +120,28 @@ function renderDatasetTable(filterQuery = '') {
     metaSummary.textContent = `${filteredRows.length} of ${rows.length} rows × ${headers.length} cols`;
   }
 
-  let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; font-family: monospace; text-align: left;">';
-  html += '<thead style="position: sticky; top: 0; background: #f1f5f9; z-index: 2; border-bottom: 2px solid #cbd5e1;"><tr>';
-  html += '<th style="padding: 6px 10px; color: #64748b; font-weight: 700; border-right: 1px solid #e2e8f0; width: 40px;">#</th>';
+  let html = '<table class="dataset-modern-table">';
+  html += '<thead><tr>';
+  html += '<th class="index-col">#</th>';
   headers.forEach(h => {
-    html += `<th style="padding: 6px 10px; color: #1e293b; font-weight: 700; border-right: 1px solid #e2e8f0; white-space: nowrap;">${escapeHtml(h)}</th>`;
+    html += `<th>${escapeHtml(h)}</th>`;
   });
   html += '</tr></thead><tbody>';
 
   const maxDisplayRows = 200;
   const slice = filteredRows.slice(0, maxDisplayRows);
   slice.forEach((row, rIdx) => {
-    const bg = rIdx % 2 === 0 ? '#ffffff' : '#f8fafc';
-    html += `<tr style="background: ${bg}; border-bottom: 1px solid #e2e8f0;">`;
-    html += `<td style="padding: 4px 10px; color: #94a3b8; border-right: 1px solid #e2e8f0; font-size: 0.75rem;">${rIdx + 1}</td>`;
+    html += '<tr>';
+    html += `<td class="index-col">${rIdx + 1}</td>`;
     headers.forEach((_, cIdx) => {
       const val = row[cIdx] !== undefined ? row[cIdx] : '';
-      html += `<td style="padding: 4px 10px; color: #334155; border-right: 1px solid #e2e8f0; white-space: nowrap; max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(String(val))}</td>`;
+      html += `<td>${escapeHtml(String(val))}</td>`;
     });
     html += '</tr>';
   });
 
   if (filteredRows.length > maxDisplayRows) {
-    html += `<tr><td colspan="${headers.length + 1}" style="padding: 10px; text-align: center; color: #64748b; font-style: italic; background: #f8fafc;">Showing first ${maxDisplayRows} of ${filteredRows.length} rows. Filter above to narrow down.</td></tr>`;
+    html += `<tr><td colspan="${headers.length + 1}" class="dataset-pagination-notice">Showing first ${maxDisplayRows} of ${filteredRows.length} rows. Filter above to narrow down.</td></tr>`;
   }
   html += '</tbody></table>';
 
@@ -316,18 +315,46 @@ const loadTabState = (index) => {
       attachDiv.innerHTML = q.localFiles.map(file => {
         const lower = file.filename.toLowerCase();
         const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
+        const isTabular = lower.endsWith('.csv') || lower.endsWith('.tsv');
+
         if (isImage) {
           return `
-            <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-bottom: 8px;">
-              <img class="student-attachment-image" src="${file.dataUrl}" alt="${file.filename}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1.5px solid #e4e4e7; object-fit: contain; background: #f8fafc; cursor: zoom-in;" />
+            <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 12px;">
+              <img class="student-attachment-image" src="${file.dataUrl}" alt="${file.filename}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid var(--panel-border); object-fit: contain; background: var(--bg-2); cursor: zoom-in;" />
             </div>
           `;
         }
-        return `<a href="${file.dataUrl}" download="${file.filename}" style="font-size: 0.85rem; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">📎 ${file.filename}</a>`;
+
+        if (isTabular) {
+          return `
+            <div class="dataset-resource-card">
+              <div class="dataset-resource-info">
+                <span class="dataset-resource-name">Dataset: ${file.filename}</span>
+                <span class="dataset-resource-meta">Available in code as '${file.filename}'</span>
+              </div>
+              <button type="button" class="dataset-resource-btn view-dataset-tab-btn" data-filename="${file.filename}">View Table &rarr;</button>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="dataset-resource-card">
+            <div class="dataset-resource-info">
+              <span class="dataset-resource-name">File: ${file.filename}</span>
+            </div>
+            <a href="${file.dataUrl}" download="${file.filename}" class="dataset-resource-btn" style="text-decoration: none;">Download &rarr;</a>
+          </div>
+        `;
       }).join('');
 
       attachDiv.querySelectorAll('.student-attachment-image').forEach(img => {
         img.addEventListener('click', () => openImageLightbox(img.src));
+      });
+
+      attachDiv.querySelectorAll('.view-dataset-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          switchBottomTab('dataset');
+        });
       });
     } else {
       attachDiv.innerHTML = '';
@@ -644,6 +671,35 @@ if (el('plotsActiveImg')) {
   });
 }
 
+// ── Theme Management (Dark Mode Default + Light Mode Toggle) ──
+const getActiveTheme = () => localStorage.getItem('labexam_theme') || 'dark';
+
+const applyTheme = (theme) => {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('labexam_theme', theme);
+  const btn = el('themeToggleBtn');
+  if (btn) {
+    btn.innerHTML = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+    btn.setAttribute('title', theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode');
+  }
+  if (typeof monaco !== 'undefined' && monaco.editor) {
+    monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs');
+  }
+};
+
+const toggleTheme = () => {
+  const current = getActiveTheme();
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+};
+
+// Initialize theme on evaluation
+applyTheme(getActiveTheme());
+const themeToggleBtn = el('themeToggleBtn');
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener('click', toggleTheme);
+}
+
 // Initialize Monaco Editor
 if (typeof require !== 'undefined') {
   require(['vs/editor/editor.main'], function () {
@@ -652,7 +708,7 @@ if (typeof require !== 'undefined') {
       monacoEditorInstance = monaco.editor.create(container, {
         value: pendingEditorValue || '',
         language: 'python',
-        theme: 'vs',
+        theme: getActiveTheme() === 'dark' ? 'vs-dark' : 'vs',
         automaticLayout: true,
         fontSize: 14,
         fontFamily: 'monospace',
@@ -848,10 +904,10 @@ const updateCellOutputDisplay = (card, cell) => {
       if (statusSpan) {
         if (cell.output.success) {
           statusSpan.className = 'sql-status-badge success';
-          statusSpan.textContent = `✔ OK (${cell.output.executionTimeMs || 0}ms)`;
+          statusSpan.textContent = `Success (${cell.output.executionTimeMs || 0}ms)`;
         } else {
           statusSpan.className = 'sql-status-badge error';
-          statusSpan.textContent = `✖ Error`;
+          statusSpan.textContent = 'Failed';
         }
       }
     } else {
@@ -893,8 +949,8 @@ const renderSqlNotebook = (questionId) => {
         <div style="display: flex; align-items: center; gap: 8px;">
           ${cell.output ? (
             cell.output.success
-              ? `<span class="sql-status-badge success">✔ OK (${cell.output.executionTimeMs || 0}ms)</span>`
-              : `<span class="sql-status-badge error">✖ Error</span>`
+              ? `<span class="sql-status-badge success">Success (${cell.output.executionTimeMs || 0}ms)</span>`
+              : `<span class="sql-status-badge error">Failed</span>`
           ) : `<span class="sql-status-badge ready">Ready</span>`}
         </div>
         <div class="sql-cell-actions">
@@ -905,8 +961,8 @@ const renderSqlNotebook = (questionId) => {
             Clear
           </button>
           ${cells.length > 1 ? `
-          <button class="sql-action-btn delete" type="button" title="Delete cell" data-action="delete">
-            🗑️
+          <button class="sql-action-btn delete" type="button" title="Delete cell" data-action="delete" style="font-size: 0.78rem;">
+            Delete
           </button>` : ''}
         </div>
       </div>
@@ -1143,13 +1199,13 @@ const resetSqlDatabaseAction = async () => {
   clearTimeout(resetConfirmTimer);
   btn.dataset.confirming = '';
   btn.disabled = true;
-  btn.innerHTML = '🔄 Resetting...';
+  btn.textContent = 'Resetting...';
 
   try {
     const res = await window.electronAPI.resetSqlDatabase();
     if (res && res.success) {
-      logEvent('✔ MySQL database reset: all tables cleaned.');
-      btn.innerHTML = '✔ Database Cleaned!';
+      logEvent('MySQL database reset: all tables cleaned.');
+      btn.textContent = 'Database Cleaned';
       btn.style.background = '#10b981';
       btn.style.color = '#ffffff';
       btn.style.borderColor = '#059669';
@@ -1162,17 +1218,17 @@ const resetSqlDatabaseAction = async () => {
       throw new Error(res ? res.error : 'Reset failed');
     }
   } catch (err) {
-    logEvent(`✖ Failed to reset MySQL database: ${err.message}`);
-    btn.innerHTML = '✖ Reset Failed';
+    logEvent(`Failed to reset MySQL database: ${err.message}`);
+    btn.textContent = 'Reset Failed';
     btn.style.background = '#fee2e2';
     btn.style.color = '#b91c1c';
   } finally {
     setTimeout(() => {
       btn.disabled = false;
-      btn.innerHTML = '🔄 Reset Database';
-      btn.style.background = '#ffffff';
-      btn.style.color = '#dc2626';
-      btn.style.borderColor = '#fca5a5';
+      btn.textContent = 'Reset Database';
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.style.borderColor = '';
     }, 2500);
   }
 };
@@ -1251,7 +1307,7 @@ if (languageSelect) {
       const startH_ed = editorWrapper.offsetHeight;
       const startH_term = terminalWrapper.offsetHeight;
       
-      splitter.style.background = '#cbd5e1';
+      splitter.classList.add('dragging');
       
       const onMouseMove = (moveEvent) => {
         const dY = moveEvent.clientY - startY;
@@ -1269,22 +1325,13 @@ if (languageSelect) {
       };
       
       const onMouseUp = () => {
-        splitter.style.background = '#f4f4f5';
+        splitter.classList.remove('dragging');
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
       };
       
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup', onMouseUp);
-    });
-
-    splitter.addEventListener('mouseenter', () => {
-      splitter.style.background = '#e2e8f0';
-    });
-    splitter.addEventListener('mouseleave', () => {
-      if (splitter.style.background !== 'rgb(203, 213, 225)') {
-        splitter.style.background = '#f4f4f5';
-      }
     });
   }
 
@@ -1302,8 +1349,8 @@ if (languageSelect) {
     [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn].forEach(btn => {
       if (btn) {
         btn.classList.remove('active');
-        btn.style.borderBottom = '3px solid transparent';
-        btn.style.color = '#71717a';
+        btn.style.borderBottom = '';
+        btn.style.color = '';
       }
     });
     [consoleContainer, plotsContainer, datasetContainer].forEach(c => {
@@ -1312,19 +1359,13 @@ if (languageSelect) {
 
     if (activeTab === 'console' && tabConsoleBtn && consoleContainer) {
       tabConsoleBtn.classList.add('active');
-      tabConsoleBtn.style.borderBottom = '3px solid #27272a';
-      tabConsoleBtn.style.color = '#27272a';
       consoleContainer.classList.remove('hidden');
     } else if (activeTab === 'plots' && tabPlotsBtn && plotsContainer) {
       tabPlotsBtn.classList.add('active');
-      tabPlotsBtn.style.borderBottom = '3px solid #27272a';
-      tabPlotsBtn.style.color = '#27272a';
       plotsContainer.classList.remove('hidden');
       if (plotsBadge) plotsBadge.style.display = 'none';
     } else if (activeTab === 'dataset' && tabDatasetBtn && datasetContainer) {
       tabDatasetBtn.classList.add('active');
-      tabDatasetBtn.style.borderBottom = '3px solid #27272a';
-      tabDatasetBtn.style.color = '#27272a';
       datasetContainer.classList.remove('hidden');
       if (datasetBadge) datasetBadge.style.display = 'none';
     }
@@ -1482,7 +1523,7 @@ el('applyDemoQBtn').addEventListener('click', async () => {
 
   loadTabState(state.activeQuestionIndex);
   
-  btn.textContent = '✔ Question Updated!';
+  btn.textContent = 'Question Updated';
   btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
   btn.style.color = '#ffffff';
   setTimeout(() => {
@@ -1637,7 +1678,7 @@ const submitCurrentSolution = (btn) => {
   btn.textContent = 'Submitting...';
 
   setTimeout(() => {
-    btn.textContent = '✔ Submitted successfully!';
+    btn.textContent = 'Submitted successfully';
     btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
     btn.style.color = '#ffffff';
     setTimeout(() => {
@@ -1688,7 +1729,7 @@ const saveLocalSolution = async (btn) => {
       }
     }
 
-    btn.textContent = '✔ Saved!';
+    btn.textContent = 'Saved';
     btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
     btn.style.color = '#ffffff';
     setTimeout(() => {
