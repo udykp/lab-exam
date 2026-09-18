@@ -1347,6 +1347,133 @@ const saveCurrentTabState = () => {
   syncActiveDraftToServer();
 };
 
+// PDF Document Cache: map of url/source -> Promise<pdfDoc>
+const pdfDocCache = new Map();
+
+async function getPdfDocument(pdfSource) {
+  if (pdfDocCache.has(pdfSource)) {
+    return await pdfDocCache.get(pdfSource);
+  }
+
+  const loadPromise = (async () => {
+    if (typeof pdfSource === 'object' && pdfSource && pdfSource.numPages) {
+      return pdfSource;
+    }
+
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs/pdf.worker.min.js';
+    } else {
+      throw new Error('PDF.js library is not loaded');
+    }
+
+    let sourceParam = pdfSource;
+    if (typeof pdfSource === 'string') {
+      if (pdfSource.startsWith('data:application/pdf;base64,') || pdfSource.startsWith('data:application/octet-stream;base64,')) {
+        const b64 = pdfSource.split(',')[1];
+        const binaryString = atob(b64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        sourceParam = { data: bytes };
+      } else if (pdfSource.startsWith('http://') || pdfSource.startsWith('https://')) {
+        let loadedBytes = null;
+        if (window.electronAPI && window.electronAPI.fetchBinaryUrl) {
+          try {
+            const res = await window.electronAPI.fetchBinaryUrl(pdfSource);
+            if (res && res.success && res.base64) {
+              const binaryString = atob(res.base64);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              loadedBytes = bytes;
+            }
+          } catch (e) {
+            console.warn('Electron binary fetch fallback:', e);
+          }
+        }
+        if (loadedBytes) {
+          sourceParam = { data: loadedBytes };
+        } else {
+          sourceParam = { url: pdfSource, withCredentials: true };
+        }
+      }
+    }
+
+    const task = window.pdfjsLib.getDocument(sourceParam);
+    return await task.promise;
+  })();
+
+  pdfDocCache.set(pdfSource, loadPromise);
+  return await loadPromise;
+}
+
+async function renderPdfPagesToContainer(container, pdfDoc, scale = 1.0, fitWidth = true) {
+  if (!container || !pdfDoc) return;
+  container.innerHTML = '<div class="pdf-loading-indicator"><div class="pdf-loading-spinner"></div><span>Rendering document...</span></div>';
+
+  try {
+    const numPages = pdfDoc.numPages;
+    const pageFragments = [];
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const baseViewport = page.getViewport({ scale: 1.0 });
+
+      let effectiveScale = scale;
+      if (fitWidth) {
+        const parentWidth = container.parentElement ? container.parentElement.clientWidth : container.clientWidth;
+        const availableWidth = Math.max(300, (parentWidth || 600) - 48);
+        const fitScale = availableWidth / baseViewport.width;
+        effectiveScale = fitScale * scale;
+      }
+
+      const viewport = page.getViewport({ scale: effectiveScale });
+      const outputScale = Math.min(2.0, window.devicePixelRatio || 1);
+
+      const pageCard = document.createElement('div');
+      pageCard.className = 'pdf-page-card no-copy-zone';
+      pageCard.style.width = `${Math.floor(viewport.width)}px`;
+
+      if (numPages > 1) {
+        const pageBadge = document.createElement('div');
+        pageBadge.style.cssText = 'position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; pointer-events: none; z-index: 10;';
+        pageBadge.textContent = `Page ${pageNum} of ${numPages}`;
+        pageCard.appendChild(pageBadge);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.className = 'pdf-page-canvas no-copy-zone';
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = `${Math.floor(viewport.width)}px`;
+      canvas.style.height = `${Math.floor(viewport.height)}px`;
+      canvas.setAttribute('draggable', 'false');
+      canvas.oncontextmenu = (e) => { e.preventDefault(); return false; };
+
+      const ctx = canvas.getContext('2d');
+      const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+
+      pageCard.appendChild(canvas);
+      pageFragments.push({ page, pageCard, canvasContext: ctx, transform, viewport });
+    }
+
+    container.innerHTML = '';
+    for (const item of pageFragments) {
+      container.appendChild(item.pageCard);
+      await item.page.render({
+        canvasContext: item.canvasContext,
+        transform: item.transform,
+        viewport: item.viewport
+      }).promise;
+    }
+  } catch (err) {
+    console.error('Failed to render PDF pages:', err);
+    container.innerHTML = `<div style="padding: 24px; color: #ef4444; text-align: center;">Failed to render document: ${err.message || err}</div>`;
+  }
+}
+
 const loadTabState = (index) => {
   state.activeQuestionIndex = index;
   const q = state.questions[index];
@@ -1360,7 +1487,7 @@ const loadTabState = (index) => {
   const attachDiv = el('studentAttachments');
   if (attachDiv) {
     if (q.attachmentUrls && q.attachmentUrls.length > 0) {
-      attachDiv.innerHTML = q.attachmentUrls.map(url => {
+      attachDiv.innerHTML = q.attachmentUrls.map((url, attachIdx) => {
         const parts = url.split('/');
         const filename = decodeURIComponent(parts[parts.length - 1].split('?')[0]);
         const cleanName = cleanAttachmentFilename(filename);
@@ -1397,8 +1524,8 @@ const loadTabState = (index) => {
                 </div>
               </div>
               <div class="pdf-frame-wrapper no-copy-zone">
-                <div class="pdf-zoom-viewport no-copy-zone">
-                  <iframe src="${fullUrl}#toolbar=0&navpanes=0" title="${cleanName}" class="pdf-split-frame no-copy-zone" allowfullscreen></iframe>
+                <div class="pdf-canvas-container no-copy-zone" data-pdf-url="${fullUrl}">
+                  <div class="pdf-loading-indicator"><div class="pdf-loading-spinner"></div><span>Loading document...</span></div>
                 </div>
               </div>
             </div>
@@ -1439,36 +1566,41 @@ const loadTabState = (index) => {
         });
       });
 
-      // Bind interactive controls for embedded PDF cards
+      // Bind interactive controls and render canvas for embedded PDF cards
       attachDiv.querySelectorAll('.pdf-viewer-deck-card').forEach(card => {
-        const viewport = card.querySelector('.pdf-zoom-viewport');
+        const container = card.querySelector('.pdf-canvas-container');
         const zoomLabel = card.querySelector('.pdf-split-zoom-label');
         const expandBtn = card.querySelector('.pdf-split-expand-btn');
+        const pdfUrl = container ? container.getAttribute('data-pdf-url') : '';
+        const title = expandBtn ? expandBtn.getAttribute('data-title') : 'Document';
         let currentZoom = 1.0;
+        let loadedPdfDoc = null;
+
+        if (pdfUrl && container) {
+          getPdfDocument(pdfUrl).then(doc => {
+            loadedPdfDoc = doc;
+            renderPdfPagesToContainer(container, doc, 1.0, true);
+          }).catch(err => {
+            console.error('Failed to render split PDF:', err);
+            container.innerHTML = `<div style="padding: 24px; color: #ef4444; text-align: center;">Failed to load PDF: ${err.message || err}</div>`;
+          });
+        }
 
         const updateFrameZoom = (newZoom) => {
+          if (!loadedPdfDoc || !container) return;
           currentZoom = Math.min(2.5, Math.max(0.6, Math.round(newZoom * 100) / 100));
           if (zoomLabel) zoomLabel.textContent = `${Math.round(currentZoom * 100)}%`;
-          if (viewport) {
-            viewport.style.transform = `scale(${currentZoom})`;
-            if (currentZoom < 1) {
-              viewport.style.width = `${(100 / currentZoom).toFixed(2)}%`;
-              viewport.style.height = `${(100 / currentZoom).toFixed(2)}%`;
-            } else {
-              viewport.style.width = '100%';
-              viewport.style.height = '100%';
-            }
-          }
+          renderPdfPagesToContainer(container, loadedPdfDoc, currentZoom, true);
         };
 
         const zoomInBtn = card.querySelector('.pdf-split-zoom-in');
         if (zoomInBtn) {
-          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoom + 0.2));
+          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoom + 0.25));
         }
 
         const zoomOutBtn = card.querySelector('.pdf-split-zoom-out');
         if (zoomOutBtn) {
-          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoom - 0.2));
+          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoom - 0.25));
         }
 
         const zoomResetBtn = card.querySelector('.pdf-split-zoom-reset');
@@ -1478,10 +1610,8 @@ const loadTabState = (index) => {
 
         if (expandBtn) {
           expandBtn.addEventListener('click', () => {
-            const url = expandBtn.getAttribute('data-url');
-            const title = expandBtn.getAttribute('data-title');
             if (typeof window.openPdfModal === 'function') {
-              window.openPdfModal(url, title);
+              window.openPdfModal(loadedPdfDoc || pdfUrl, title);
             }
           });
         }
@@ -2220,37 +2350,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // PDF Viewer Modal Controller
   let pdfModalZoomScale = 1.0;
+  let currentModalPdfDoc = null;
   const pdfModal = el('pdfViewerModal');
-  const pdfModalFrame = el('pdfModalFrame');
   const pdfModalTitle = el('pdfModalTitle');
   const pdfModalZoomLabel = el('pdfModalZoomLabel');
   const pdfModalFrameWrapper = el('pdfModalFrameWrapper');
-  const pdfModalZoomViewport = el('pdfModalZoomViewport');
+  const pdfModalCanvasContainer = el('pdfModalCanvasContainer');
 
-  window.openPdfModal = (url, title) => {
-    if (!pdfModal || !pdfModalFrame) return;
+  window.openPdfModal = async (source, title) => {
+    if (!pdfModal || !pdfModalCanvasContainer) return;
     if (pdfModalTitle) pdfModalTitle.textContent = `Document: ${title || 'Document'}`;
-    const cleanUrl = url ? (url.includes('#') ? url.split('#')[0] : url) : '';
-    pdfModalFrame.src = `${cleanUrl}#toolbar=0&navpanes=0`;
     pdfModalZoomScale = 1.0;
     if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = '100%';
-    const viewport = el('pdfModalZoomViewport');
-    if (viewport) {
-      viewport.style.transform = 'scale(1)';
-      viewport.style.width = '100%';
-      viewport.style.height = '100%';
-    }
     pdfModal.classList.remove('hidden');
     if (pdfModalFrameWrapper) {
       pdfModalFrameWrapper.scrollLeft = 0;
       pdfModalFrameWrapper.scrollTop = 0;
+    }
+
+    try {
+      currentModalPdfDoc = await getPdfDocument(source);
+      await renderPdfPagesToContainer(pdfModalCanvasContainer, currentModalPdfDoc, 1.0, true);
+    } catch (e) {
+      console.error('Modal PDF load failed:', e);
+      pdfModalCanvasContainer.innerHTML = `<div style="padding: 24px; color: #ef4444;">Failed to load PDF: ${e.message || e}</div>`;
     }
   };
 
   const closePdfModal = () => {
     if (pdfModal) {
       pdfModal.classList.add('hidden');
-      if (pdfModalFrame) pdfModalFrame.src = '';
+      if (pdfModalCanvasContainer) pdfModalCanvasContainer.innerHTML = '';
+      currentModalPdfDoc = null;
     }
   };
 
@@ -2258,27 +2389,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('closePdfModalBtn').addEventListener('click', closePdfModal);
   }
 
-  const updatePdfModalZoom = (newScale) => {
+  const updatePdfModalZoom = async (newScale) => {
+    if (!currentModalPdfDoc || !pdfModalCanvasContainer) return;
     pdfModalZoomScale = Math.min(2.5, Math.max(0.6, Math.round(newScale * 100) / 100));
     if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = `${Math.round(pdfModalZoomScale * 100)}%`;
-    const viewport = el('pdfModalZoomViewport');
-    if (viewport) {
-      viewport.style.transform = `scale(${pdfModalZoomScale})`;
-      if (pdfModalZoomScale < 1) {
-        viewport.style.width = `${(100 / pdfModalZoomScale).toFixed(2)}%`;
-        viewport.style.height = `${(100 / pdfModalZoomScale).toFixed(2)}%`;
-      } else {
-        viewport.style.width = '100%';
-        viewport.style.height = '100%';
-      }
-    }
+    await renderPdfPagesToContainer(pdfModalCanvasContainer, currentModalPdfDoc, pdfModalZoomScale, true);
   };
 
   if (el('pdfModalZoomIn')) {
-    el('pdfModalZoomIn').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale + 0.2));
+    el('pdfModalZoomIn').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale + 0.25));
   }
   if (el('pdfModalZoomOut')) {
-    el('pdfModalZoomOut').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale - 0.2));
+    el('pdfModalZoomOut').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale - 0.25));
   }
   if (el('pdfModalZoomReset')) {
     el('pdfModalZoomReset').addEventListener('click', () => updatePdfModalZoom(1.0));

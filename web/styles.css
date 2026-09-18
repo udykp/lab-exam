@@ -1082,27 +1082,66 @@ code {
   overflow: auto;
   user-select: none;
   -webkit-user-select: none;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
-.pdf-zoom-viewport {
+.pdf-canvas-container {
   width: 100%;
-  height: 100%;
-  transform-origin: top left;
-  transition: transform 0.12s ease-out;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pdf-page-card {
   position: relative;
+  margin: 0 auto 16px auto;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.pdf-frame-wrapper iframe,
-.pdf-zoom-viewport iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
+.pdf-page-canvas {
   display: block;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.pdf-loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.pdf-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: pdf-spin 0.8s linear infinite;
+}
+
+@keyframes pdf-spin {
+  to { transform: rotate(360deg); }
 }
 
 .no-copy-zone {
   user-select: none !important;
   -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
 }
 
 .workspace-right-deck {

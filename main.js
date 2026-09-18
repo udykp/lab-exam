@@ -1630,6 +1630,28 @@ ipcMain.handle('fetch-text-url', async (event, url) => {
   }
 });
 
+ipcMain.handle('fetch-binary-url', async (event, url) => {
+  try {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString('base64');
+          return { success: true, base64 };
+        }
+        console.warn(`[fetch-binary-url] Attempt ${attempt} HTTP ${response.status}`);
+      } catch (err) {
+        console.warn(`[fetch-binary-url] Attempt ${attempt} network error:`, err.message);
+      }
+      if (attempt < 3) await new Promise(r => setTimeout(r, 600));
+    }
+    return { success: false, error: 'Failed to download file after 3 attempts' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 
 ipcMain.on('minimize-app', () => {
   if (mainWindow) {
