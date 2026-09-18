@@ -1064,7 +1064,25 @@ const SQL_KEYWORDS = new Set([
 ]);
 
 function isVirtualDatabase(db) {
-  return db && db.toLowerCase() !== 'labexam' && virtualDatabases.has(db.toLowerCase());
+  if (!db) return false;
+  const lower = db.toLowerCase();
+  if (lower === 'labexam' || lower === 'information_schema' || lower === 'performance_schema' || lower === 'mysql' || lower === 'sys') {
+    return false;
+  }
+  for (const v of virtualDatabases) {
+    if (v.toLowerCase() === lower && lower !== 'labexam') return true;
+  }
+  return false;
+}
+
+function removeVirtualDatabase(db) {
+  if (!db) return;
+  const lower = db.toLowerCase();
+  for (const v of virtualDatabases) {
+    if (v.toLowerCase() === lower) {
+      virtualDatabases.delete(v);
+    }
+  }
 }
 
 function rewriteSqlForVirtualDb(sql, activeDb) {
@@ -1074,7 +1092,7 @@ function rewriteSqlForVirtualDb(sql, activeDb) {
 
   // 1. Rewrite explicit virtual database references: e.g. uday.student -> uday__student
   virtualDatabases.forEach(vdb => {
-    if (vdb === 'labexam') return;
+    if (vdb.toLowerCase() === 'labexam') return;
     const vdbRegex = new RegExp(`\\b${vdb}\\s*\\.\\s*([a-zA-Z0-9_$]+)`, 'gi');
     transformed = transformed.replace(vdbRegex, `${vdb}__$1`);
   });
@@ -1200,7 +1218,7 @@ function formatVirtualShowTables(output, activeDb) {
   if (!output || output.includes('Empty set')) {
     return 'Empty set (0.00 sec)';
   }
-  const prefix = `${activeDb}__`;
+  const prefix = `${activeDb.toLowerCase()}__`;
   const lines = output.split('\n');
   const tableLines = lines.filter(l => l.startsWith('|') && !l.includes('---'));
 
@@ -1209,7 +1227,7 @@ function formatVirtualShowTables(output, activeDb) {
     const match = tableLines[i].match(/\|\s*([^|\s]+)\s*\|/);
     if (match) {
       let tbl = match[1].trim();
-      if (tbl.startsWith(prefix)) {
+      if (tbl.toLowerCase().startsWith(prefix)) {
         tbl = tbl.slice(prefix.length);
       }
       tableNames.push(tbl);
@@ -1237,20 +1255,32 @@ function formatVirtualShowTables(output, activeDb) {
 }
 
 function formatVirtualShowDatabases(output) {
-  const dbs = new Set(['information_schema', 'labexam', 'performance_schema']);
-  virtualDatabases.forEach(v => dbs.add(v));
+  const dbMap = new Map();
+  dbMap.set('information_schema', 'information_schema');
+  dbMap.set('labexam', 'labexam');
+  dbMap.set('performance_schema', 'performance_schema');
 
   if (output) {
     const lines = output.split('\n');
     for (const l of lines) {
       const match = l.match(/\|\s*([a-zA-Z0-9_$]+)\s*\|/);
-      if (match && match[1].toLowerCase() !== 'database') {
-        dbs.add(match[1]);
+      if (match) {
+        const name = match[1].trim();
+        if (name.toLowerCase() !== 'database') {
+          dbMap.set(name.toLowerCase(), name);
+        }
       }
     }
   }
 
-  const sortedDbs = Array.from(dbs).sort();
+  // Deduplicate and append virtual databases if not already present in native list
+  virtualDatabases.forEach(v => {
+    if (v && !dbMap.has(v.toLowerCase())) {
+      dbMap.set(v.toLowerCase(), v);
+    }
+  });
+
+  const sortedDbs = Array.from(dbMap.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   const colHeader = 'Database';
   let maxLen = colHeader.length;
   for (const db of sortedDbs) {
@@ -1281,7 +1311,6 @@ ipcMain.handle('run-sql-cell', async (event, { query, database }) => {
   if (standaloneUseMatch) {
     const targetDb = standaloneUseMatch[1];
     currentActiveSqlDatabase = targetDb;
-    virtualDatabases.add(targetDb.toLowerCase());
     return {
       success: true,
       output: 'Database changed',
@@ -1313,7 +1342,8 @@ ipcMain.handle('run-sql-cell', async (event, { query, database }) => {
       exec(`mysql -u exam_user -pexam_password -e "${trimmedQuery.replace(/"/g, '\\"')}"`, (err, stdout, stderr) => {
         const duration = Date.now() - startTime;
         if (!err) {
-          virtualDatabases.add(dbName.toLowerCase());
+          // Native creation succeeded! Ensure it is not in virtual tracker
+          removeVirtualDatabase(dbName);
           resolve({
             success: true,
             output: stdout.trim() || 'Query OK, 1 row affected (0.01 sec)',
@@ -1323,7 +1353,7 @@ ipcMain.handle('run-sql-cell', async (event, { query, database }) => {
         } else {
           // If 1044 Access Denied, transparently virtualize without student seeing error
           if (stderr.includes('1044') || /access denied/i.test(stderr)) {
-            virtualDatabases.add(dbName.toLowerCase());
+            virtualDatabases.add(dbName);
             resolve({
               success: true,
               output: 'Query OK, 1 row affected (0.01 sec)',
@@ -1351,12 +1381,12 @@ ipcMain.handle('run-sql-cell', async (event, { query, database }) => {
     const duration = Date.now() - startTime;
     if (isVirtualDatabase(dbName)) {
       return new Promise((resolve) => {
-        exec(`mysql -u exam_user -pexam_password labexam -N -B -e "SELECT table_name FROM information_schema.tables WHERE table_schema = 'labexam' AND table_name LIKE '${dbName}__%';"`, async (err, stdout) => {
+        exec(`mysql -u exam_user -pexam_password labexam -N -B -e "SELECT table_name FROM information_schema.tables WHERE table_schema = 'labexam' AND table_name LIKE '${dbName.toLowerCase()}__%';"`, async (err, stdout) => {
           if (stdout && stdout.trim()) {
             const tbls = stdout.trim().split(/\s+/).join(', ');
             await new Promise(r => exec(`mysql -u exam_user -pexam_password labexam -e "DROP TABLE IF EXISTS ${tbls};"`, r));
           }
-          virtualDatabases.delete(dbName.toLowerCase());
+          removeVirtualDatabase(dbName);
           if (currentActiveSqlDatabase.toLowerCase() === dbName.toLowerCase()) {
             currentActiveSqlDatabase = 'labexam';
           }
@@ -1372,16 +1402,10 @@ ipcMain.handle('run-sql-cell', async (event, { query, database }) => {
   }
 
   // Multi-statement queries or general SQL:
-  const createDbMatches = [...query.matchAll(/(?:^|[\s;])CREATE\s+DATABASE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"']?([a-zA-Z0-9_$]+)[`"']?/gi)];
-  for (const m of createDbMatches) {
-    virtualDatabases.add(m[1].toLowerCase());
-  }
-
   const useMatches = [...query.matchAll(/(?:^|[\s;])USE\s+[`"']?([a-zA-Z0-9_$]+)[`"']?/gi)];
   let switchedToDb = null;
   if (useMatches.length > 0) {
     switchedToDb = useMatches[useMatches.length - 1][1];
-    virtualDatabases.add(switchedToDb.toLowerCase());
   }
 
   let targetDb = (database && typeof database === 'string' && database.trim())
@@ -1447,8 +1471,8 @@ ipcMain.handle('run-sql-cell', async (event, { query, database }) => {
         // If native execution failed with ERROR 1044 Access Denied, transparently self-heal via virtual engine!
         if (cleanedStderr.includes('1044') || /access denied/i.test(cleanedStderr)) {
           const matchedDb = (cleanedStderr.match(/database '([a-zA-Z0-9_$]+)'/i) || [])[1] || effectiveActiveDb;
-          if (matchedDb && matchedDb !== 'labexam') {
-            virtualDatabases.add(matchedDb.toLowerCase());
+          if (matchedDb && matchedDb.toLowerCase() !== 'labexam') {
+            virtualDatabases.add(matchedDb);
             currentActiveSqlDatabase = matchedDb;
 
             let retryQuery = query.replace(/(?:^|[\s;])CREATE\s+DATABASE(?:\s+IF\s+NOT\s+EXISTS)?\s+[`"']?[a-zA-Z0-9_$]+[`"']?;?/gi, ';')
