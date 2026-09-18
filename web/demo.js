@@ -385,33 +385,34 @@ const loadTabState = (index) => {
       attachDiv.querySelectorAll('.pdf-viewer-deck-card').forEach(card => {
         const frame = card.querySelector('.pdf-split-frame');
         const zoomLabel = card.querySelector('.pdf-split-zoom-label');
-        let currentZoom = 1;
+        const expandBtn = card.querySelector('.pdf-split-expand-btn');
+        const rawUrl = expandBtn ? expandBtn.getAttribute('data-url') : (frame ? frame.src : '');
+        const baseUrl = rawUrl ? (rawUrl.includes('#') ? rawUrl.split('#')[0] : rawUrl) : '';
+        let currentZoomPercent = 100;
 
-        const updateFrameZoom = (newZoom) => {
-          currentZoom = Math.min(2.5, Math.max(0.6, newZoom));
-          if (zoomLabel) zoomLabel.textContent = `${Math.round(currentZoom * 100)}%`;
-          if (frame) {
-            frame.style.width = `${currentZoom * 100}%`;
-            frame.style.height = `${currentZoom * 100}%`;
+        const updateFrameZoom = (newPercent) => {
+          currentZoomPercent = Math.min(250, Math.max(50, newPercent));
+          if (zoomLabel) zoomLabel.textContent = `${currentZoomPercent}%`;
+          if (frame && baseUrl) {
+            frame.src = `${baseUrl}#toolbar=0&navpanes=0&zoom=${currentZoomPercent}`;
           }
         };
 
         const zoomInBtn = card.querySelector('.pdf-split-zoom-in');
         if (zoomInBtn) {
-          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoom + 0.25));
+          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoomPercent + 25));
         }
 
         const zoomOutBtn = card.querySelector('.pdf-split-zoom-out');
         if (zoomOutBtn) {
-          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoom - 0.25));
+          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoomPercent - 25));
         }
 
         const zoomResetBtn = card.querySelector('.pdf-split-zoom-reset');
         if (zoomResetBtn) {
-          zoomResetBtn.addEventListener('click', () => updateFrameZoom(1));
+          zoomResetBtn.addEventListener('click', () => updateFrameZoom(100));
         }
 
-        const expandBtn = card.querySelector('.pdf-split-expand-btn');
         if (expandBtn) {
           expandBtn.addEventListener('click', () => {
             const url = expandBtn.getAttribute('data-url');
@@ -589,7 +590,8 @@ el('closeLightboxBtn').addEventListener('click', () => {
 });
 
 // PDF Viewer Modal Controller
-let pdfModalZoomScale = 1;
+let pdfModalZoomPercent = 100;
+let pdfModalBaseUrl = '';
 const pdfModal = el('pdfViewerModal');
 const pdfModalFrame = el('pdfModalFrame');
 const pdfModalTitle = el('pdfModalTitle');
@@ -599,12 +601,10 @@ const pdfModalFrameWrapper = el('pdfModalFrameWrapper');
 window.openPdfModal = (url, title) => {
   if (!pdfModal || !pdfModalFrame) return;
   if (pdfModalTitle) pdfModalTitle.textContent = `Document: ${title || 'Document'}`;
-  const cleanUrl = url.includes('#') ? url.split('#')[0] : url;
-  pdfModalFrame.src = `${cleanUrl}#toolbar=0&navpanes=0`;
-  pdfModalZoomScale = 1;
+  pdfModalBaseUrl = url ? (url.includes('#') ? url.split('#')[0] : url) : '';
+  pdfModalZoomPercent = 100;
   if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = '100%';
-  pdfModalFrame.style.width = '100%';
-  pdfModalFrame.style.height = '100%';
+  pdfModalFrame.src = `${pdfModalBaseUrl}#toolbar=0&navpanes=0&zoom=100`;
   pdfModal.classList.remove('hidden');
   if (pdfModalFrameWrapper) {
     pdfModalFrameWrapper.scrollLeft = 0;
@@ -623,23 +623,22 @@ if (el('closePdfModalBtn')) {
   el('closePdfModalBtn').addEventListener('click', closePdfModal);
 }
 
-const updatePdfModalZoom = (newScale) => {
-  pdfModalZoomScale = Math.min(2.5, Math.max(0.6, newScale));
-  if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = `${Math.round(pdfModalZoomScale * 100)}%`;
-  if (pdfModalFrame) {
-    pdfModalFrame.style.width = `${pdfModalZoomScale * 100}%`;
-    pdfModalFrame.style.height = `${pdfModalZoomScale * 100}%`;
+const updatePdfModalZoom = (newPercent) => {
+  pdfModalZoomPercent = Math.min(250, Math.max(50, newPercent));
+  if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = `${pdfModalZoomPercent}%`;
+  if (pdfModalFrame && pdfModalBaseUrl) {
+    pdfModalFrame.src = `${pdfModalBaseUrl}#toolbar=0&navpanes=0&zoom=${pdfModalZoomPercent}`;
   }
 };
 
 if (el('pdfModalZoomIn')) {
-  el('pdfModalZoomIn').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale + 0.25));
+  el('pdfModalZoomIn').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomPercent + 25));
 }
 if (el('pdfModalZoomOut')) {
-  el('pdfModalZoomOut').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale - 0.25));
+  el('pdfModalZoomOut').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomPercent - 25));
 }
 if (el('pdfModalZoomReset')) {
-  el('pdfModalZoomReset').addEventListener('click', () => updatePdfModalZoom(1));
+  el('pdfModalZoomReset').addEventListener('click', () => updatePdfModalZoom(100));
 }
 
 // Keyboard shortcut (Escape) to close lightbox or PDF modal
