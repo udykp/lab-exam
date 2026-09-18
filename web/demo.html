@@ -262,7 +262,9 @@
       </div>
     </div>
     <div id="pdfModalFrameWrapper" style="flex: 1; width: 100%; background: #18181b; border: 1px solid var(--panel-border); border-radius: 10px; overflow: auto; position: relative;">
-      <iframe id="pdfModalFrame" src="" title="Expanded Document" style="width: 100%; height: 100%; border: none; display: block; transform-origin: top center;" allowfullscreen></iframe>
+      <div id="pdfModalZoomViewport" style="width: 100%; height: 100%; transform-origin: top left; transition: transform 0.12s ease-out; position: relative;">
+        <iframe id="pdfModalFrame" src="" title="Expanded Document" style="width: 100%; height: 100%; border: none; display: block;" allowfullscreen></iframe>
+      </div>
     </div>
   </div>
 

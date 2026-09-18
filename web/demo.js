@@ -343,7 +343,9 @@ const loadTabState = (index) => {
                 </div>
               </div>
               <div class="pdf-frame-wrapper no-copy-zone">
-                <iframe src="${file.dataUrl}#toolbar=0&navpanes=0" title="${file.filename}" class="pdf-split-frame no-copy-zone" allowfullscreen></iframe>
+                <div class="pdf-zoom-viewport no-copy-zone">
+                  <iframe src="${file.dataUrl}#toolbar=0&navpanes=0" title="${file.filename}" class="pdf-split-frame no-copy-zone" allowfullscreen></iframe>
+                </div>
               </div>
             </div>
           `;
@@ -383,34 +385,39 @@ const loadTabState = (index) => {
 
       // Bind interactive controls for embedded PDF cards
       attachDiv.querySelectorAll('.pdf-viewer-deck-card').forEach(card => {
-        const frame = card.querySelector('.pdf-split-frame');
+        const viewport = card.querySelector('.pdf-zoom-viewport');
         const zoomLabel = card.querySelector('.pdf-split-zoom-label');
         const expandBtn = card.querySelector('.pdf-split-expand-btn');
-        const rawUrl = expandBtn ? expandBtn.getAttribute('data-url') : (frame ? frame.src : '');
-        const baseUrl = rawUrl ? (rawUrl.includes('#') ? rawUrl.split('#')[0] : rawUrl) : '';
-        let currentZoomPercent = 100;
+        let currentZoom = 1.0;
 
-        const updateFrameZoom = (newPercent) => {
-          currentZoomPercent = Math.min(250, Math.max(50, newPercent));
-          if (zoomLabel) zoomLabel.textContent = `${currentZoomPercent}%`;
-          if (frame && baseUrl) {
-            frame.src = `${baseUrl}#toolbar=0&navpanes=0&zoom=${currentZoomPercent}`;
+        const updateFrameZoom = (newZoom) => {
+          currentZoom = Math.min(2.5, Math.max(0.6, Math.round(newZoom * 100) / 100));
+          if (zoomLabel) zoomLabel.textContent = `${Math.round(currentZoom * 100)}%`;
+          if (viewport) {
+            viewport.style.transform = `scale(${currentZoom})`;
+            if (currentZoom < 1) {
+              viewport.style.width = `${(100 / currentZoom).toFixed(2)}%`;
+              viewport.style.height = `${(100 / currentZoom).toFixed(2)}%`;
+            } else {
+              viewport.style.width = '100%';
+              viewport.style.height = '100%';
+            }
           }
         };
 
         const zoomInBtn = card.querySelector('.pdf-split-zoom-in');
         if (zoomInBtn) {
-          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoomPercent + 25));
+          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoom + 0.2));
         }
 
         const zoomOutBtn = card.querySelector('.pdf-split-zoom-out');
         if (zoomOutBtn) {
-          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoomPercent - 25));
+          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoom - 0.2));
         }
 
         const zoomResetBtn = card.querySelector('.pdf-split-zoom-reset');
         if (zoomResetBtn) {
-          zoomResetBtn.addEventListener('click', () => updateFrameZoom(100));
+          zoomResetBtn.addEventListener('click', () => updateFrameZoom(1.0));
         }
 
         if (expandBtn) {
@@ -590,21 +597,27 @@ el('closeLightboxBtn').addEventListener('click', () => {
 });
 
 // PDF Viewer Modal Controller
-let pdfModalZoomPercent = 100;
-let pdfModalBaseUrl = '';
+let pdfModalZoomScale = 1.0;
 const pdfModal = el('pdfViewerModal');
 const pdfModalFrame = el('pdfModalFrame');
 const pdfModalTitle = el('pdfModalTitle');
 const pdfModalZoomLabel = el('pdfModalZoomLabel');
 const pdfModalFrameWrapper = el('pdfModalFrameWrapper');
+const pdfModalZoomViewport = el('pdfModalZoomViewport');
 
 window.openPdfModal = (url, title) => {
   if (!pdfModal || !pdfModalFrame) return;
   if (pdfModalTitle) pdfModalTitle.textContent = `Document: ${title || 'Document'}`;
-  pdfModalBaseUrl = url ? (url.includes('#') ? url.split('#')[0] : url) : '';
-  pdfModalZoomPercent = 100;
+  const cleanUrl = url ? (url.includes('#') ? url.split('#')[0] : url) : '';
+  pdfModalFrame.src = `${cleanUrl}#toolbar=0&navpanes=0`;
+  pdfModalZoomScale = 1.0;
   if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = '100%';
-  pdfModalFrame.src = `${pdfModalBaseUrl}#toolbar=0&navpanes=0&zoom=100`;
+  const viewport = el('pdfModalZoomViewport');
+  if (viewport) {
+    viewport.style.transform = 'scale(1)';
+    viewport.style.width = '100%';
+    viewport.style.height = '100%';
+  }
   pdfModal.classList.remove('hidden');
   if (pdfModalFrameWrapper) {
     pdfModalFrameWrapper.scrollLeft = 0;
@@ -623,22 +636,30 @@ if (el('closePdfModalBtn')) {
   el('closePdfModalBtn').addEventListener('click', closePdfModal);
 }
 
-const updatePdfModalZoom = (newPercent) => {
-  pdfModalZoomPercent = Math.min(250, Math.max(50, newPercent));
-  if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = `${pdfModalZoomPercent}%`;
-  if (pdfModalFrame && pdfModalBaseUrl) {
-    pdfModalFrame.src = `${pdfModalBaseUrl}#toolbar=0&navpanes=0&zoom=${pdfModalZoomPercent}`;
+const updatePdfModalZoom = (newScale) => {
+  pdfModalZoomScale = Math.min(2.5, Math.max(0.6, Math.round(newScale * 100) / 100));
+  if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = `${Math.round(pdfModalZoomScale * 100)}%`;
+  const viewport = el('pdfModalZoomViewport');
+  if (viewport) {
+    viewport.style.transform = `scale(${pdfModalZoomScale})`;
+    if (pdfModalZoomScale < 1) {
+      viewport.style.width = `${(100 / pdfModalZoomScale).toFixed(2)}%`;
+      viewport.style.height = `${(100 / pdfModalZoomScale).toFixed(2)}%`;
+    } else {
+      viewport.style.width = '100%';
+      viewport.style.height = '100%';
+    }
   }
 };
 
 if (el('pdfModalZoomIn')) {
-  el('pdfModalZoomIn').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomPercent + 25));
+  el('pdfModalZoomIn').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale + 0.2));
 }
 if (el('pdfModalZoomOut')) {
-  el('pdfModalZoomOut').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomPercent - 25));
+  el('pdfModalZoomOut').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale - 0.2));
 }
 if (el('pdfModalZoomReset')) {
-  el('pdfModalZoomReset').addEventListener('click', () => updatePdfModalZoom(100));
+  el('pdfModalZoomReset').addEventListener('click', () => updatePdfModalZoom(1.0));
 }
 
 // Keyboard shortcut (Escape) to close lightbox or PDF modal

@@ -1084,12 +1084,20 @@ code {
   -webkit-user-select: none;
 }
 
-.pdf-frame-wrapper iframe {
+.pdf-zoom-viewport {
+  width: 100%;
+  height: 100%;
+  transform-origin: top left;
+  transition: transform 0.12s ease-out;
+  position: relative;
+}
+
+.pdf-frame-wrapper iframe,
+.pdf-zoom-viewport iframe {
   width: 100%;
   height: 100%;
   border: none;
   display: block;
-  transform-origin: top center;
 }
 
 .no-copy-zone {
