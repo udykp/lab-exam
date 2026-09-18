@@ -1382,15 +1382,22 @@ const loadTabState = (index) => {
 
         if (isPdf) {
           return `
-            <div class="pdf-viewer-deck-card" style="display: flex; flex-direction: column; width: 100%; margin-top: 14px; background: var(--bg-2); border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden;">
-              <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid var(--panel-border);">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-weight: 700; font-size: 0.85rem; color: var(--text);">Document: ${cleanName}</span>
-                  <span style="font-size: 0.72rem; color: var(--muted); background: var(--panel); padding: 2px 7px; border-radius: 5px; border: 1px solid var(--panel-border); font-weight: 600;">PDF</span>
+            <div class="pdf-viewer-deck-card no-copy-zone" oncontextmenu="return false;">
+              <div class="pdf-toolbar">
+                <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+                  <span style="font-weight: 700; font-size: 0.82rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Document: ${cleanName}</span>
+                  <span style="font-size: 0.7rem; color: var(--muted); background: var(--panel); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--panel-border); font-weight: 600;">PDF</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 5px; flex-shrink: 0;">
+                  <button type="button" class="pdf-btn pdf-split-zoom-out" title="Zoom Out">🔍-</button>
+                  <span class="pdf-split-zoom-label" style="font-size: 0.75rem; color: var(--muted); font-weight: 600; min-width: 38px; text-align: center;">100%</span>
+                  <button type="button" class="pdf-btn pdf-split-zoom-in" title="Zoom In">🔍+</button>
+                  <button type="button" class="pdf-btn pdf-split-zoom-reset" title="Reset Zoom">Reset</button>
+                  <button type="button" class="pdf-btn pdf-btn-expand pdf-split-expand-btn" data-url="${fullUrl}" data-title="${cleanName}" title="Expand Document">⛶ Expand</button>
                 </div>
               </div>
-              <div style="width: 100%; height: 520px; background: #18181b;">
-                <iframe src="${fullUrl}#toolbar=1&navpanes=0" title="${cleanName}" style="width: 100%; height: 100%; border: none; display: block;" allowfullscreen></iframe>
+              <div class="pdf-frame-wrapper no-copy-zone">
+                <iframe src="${fullUrl}#toolbar=0&navpanes=0" title="${cleanName}" class="pdf-split-frame no-copy-zone" allowfullscreen></iframe>
               </div>
             </div>
           `;
@@ -1428,6 +1435,48 @@ const loadTabState = (index) => {
         btn.addEventListener('click', () => {
           switchBottomTab('dataset');
         });
+      });
+
+      // Bind interactive controls for embedded PDF cards
+      attachDiv.querySelectorAll('.pdf-viewer-deck-card').forEach(card => {
+        const frame = card.querySelector('.pdf-split-frame');
+        const zoomLabel = card.querySelector('.pdf-split-zoom-label');
+        let currentZoom = 1;
+
+        const updateFrameZoom = (newZoom) => {
+          currentZoom = Math.min(2.5, Math.max(0.6, newZoom));
+          if (zoomLabel) zoomLabel.textContent = `${Math.round(currentZoom * 100)}%`;
+          if (frame) {
+            frame.style.width = `${currentZoom * 100}%`;
+            frame.style.height = `${currentZoom * 100}%`;
+          }
+        };
+
+        const zoomInBtn = card.querySelector('.pdf-split-zoom-in');
+        if (zoomInBtn) {
+          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoom + 0.25));
+        }
+
+        const zoomOutBtn = card.querySelector('.pdf-split-zoom-out');
+        if (zoomOutBtn) {
+          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoom - 0.25));
+        }
+
+        const zoomResetBtn = card.querySelector('.pdf-split-zoom-reset');
+        if (zoomResetBtn) {
+          zoomResetBtn.addEventListener('click', () => updateFrameZoom(1));
+        }
+
+        const expandBtn = card.querySelector('.pdf-split-expand-btn');
+        if (expandBtn) {
+          expandBtn.addEventListener('click', () => {
+            const url = expandBtn.getAttribute('data-url');
+            const title = expandBtn.getAttribute('data-title');
+            if (typeof window.openPdfModal === 'function') {
+              window.openPdfModal(url, title);
+            }
+          });
+        }
       });
     } else {
       attachDiv.innerHTML = '';
@@ -2160,6 +2209,101 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }, { passive: false });
   }
+
+  // PDF Viewer Modal Controller
+  let pdfModalZoomScale = 1;
+  const pdfModal = el('pdfViewerModal');
+  const pdfModalFrame = el('pdfModalFrame');
+  const pdfModalTitle = el('pdfModalTitle');
+  const pdfModalZoomLabel = el('pdfModalZoomLabel');
+  const pdfModalFrameWrapper = el('pdfModalFrameWrapper');
+
+  window.openPdfModal = (url, title) => {
+    if (!pdfModal || !pdfModalFrame) return;
+    if (pdfModalTitle) pdfModalTitle.textContent = `Document: ${title || 'Document'}`;
+    const cleanUrl = url.includes('#') ? url.split('#')[0] : url;
+    pdfModalFrame.src = `${cleanUrl}#toolbar=0&navpanes=0`;
+    pdfModalZoomScale = 1;
+    if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = '100%';
+    pdfModalFrame.style.width = '100%';
+    pdfModalFrame.style.height = '100%';
+    pdfModal.classList.remove('hidden');
+    if (pdfModalFrameWrapper) {
+      pdfModalFrameWrapper.scrollLeft = 0;
+      pdfModalFrameWrapper.scrollTop = 0;
+    }
+  };
+
+  const closePdfModal = () => {
+    if (pdfModal) {
+      pdfModal.classList.add('hidden');
+      if (pdfModalFrame) pdfModalFrame.src = '';
+    }
+  };
+
+  if (el('closePdfModalBtn')) {
+    el('closePdfModalBtn').addEventListener('click', closePdfModal);
+  }
+
+  const updatePdfModalZoom = (newScale) => {
+    pdfModalZoomScale = Math.min(2.5, Math.max(0.6, newScale));
+    if (pdfModalZoomLabel) pdfModalZoomLabel.textContent = `${Math.round(pdfModalZoomScale * 100)}%`;
+    if (pdfModalFrame) {
+      pdfModalFrame.style.width = `${pdfModalZoomScale * 100}%`;
+      pdfModalFrame.style.height = `${pdfModalZoomScale * 100}%`;
+    }
+  };
+
+  if (el('pdfModalZoomIn')) {
+    el('pdfModalZoomIn').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale + 0.25));
+  }
+  if (el('pdfModalZoomOut')) {
+    el('pdfModalZoomOut').addEventListener('click', () => updatePdfModalZoom(pdfModalZoomScale - 0.25));
+  }
+  if (el('pdfModalZoomReset')) {
+    el('pdfModalZoomReset').addEventListener('click', () => updatePdfModalZoom(1));
+  }
+
+  // Keyboard shortcut (Escape) to close lightbox or PDF modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (pdfModal && !pdfModal.classList.contains('hidden')) {
+        closePdfModal();
+      }
+      if (modal && !modal.classList.contains('hidden')) {
+        closeLightbox();
+      }
+    }
+  });
+
+  // Anti-copy protection specifically targeted on PDF documents
+  // Ensures Monaco editor, SQL cells, terminal, etc. are 100% unaffected
+  document.addEventListener('copy', (e) => {
+    const target = e.target;
+    if (target && (target.closest('.pdf-viewer-deck-card') || target.closest('#pdfViewerModal') || target.closest('.no-copy-zone'))) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.clipboardData) e.clipboardData.clearData();
+      return false;
+    }
+  }, true);
+
+  document.addEventListener('cut', (e) => {
+    const target = e.target;
+    if (target && (target.closest('.pdf-viewer-deck-card') || target.closest('#pdfViewerModal') || target.closest('.no-copy-zone'))) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  }, true);
+
+  document.addEventListener('contextmenu', (e) => {
+    const target = e.target;
+    if (target && (target.closest('.pdf-viewer-deck-card') || target.closest('#pdfViewerModal') || target.closest('.no-copy-zone'))) {
+      e.preventDefault();
+      return false;
+    }
+  }, true);
 
   // Student search/filter input handling for Bulk Assign
   const searchInput = el('searchStudentInput');

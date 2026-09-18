@@ -244,6 +244,24 @@
       <button id="closeLightboxBtn" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 8px 16px; font-weight: 700; cursor: pointer;">Close</button>
     </div>
     <img id="lightboxImage" src="" alt="Zoomed view" style="max-width: 90%; max-height: 80%; object-fit: contain; border-radius: 8px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);" />
+  <!-- Expanded PDF Document Viewer -->
+  <div id="pdfViewerModal" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.96); z-index: 100004; display: flex; flex-direction: column; padding: 20px 32px; backdrop-filter: blur(12px); user-select: none; -webkit-user-select: none;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span id="pdfModalTitle" style="font-size: 1.05rem; font-weight: 700; color: #ffffff; font-family: 'JetBrains Mono', monospace;">Document Viewer</span>
+        <span style="font-size: 0.75rem; color: #94a3b8; background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); font-weight: 600;">PDF</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <button id="pdfModalZoomOut" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">🔍- Out</button>
+        <span id="pdfModalZoomLabel" style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; min-width: 45px; text-align: center;">100%</span>
+        <button id="pdfModalZoomIn" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">🔍+ In</button>
+        <button id="pdfModalZoomReset" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">Reset</button>
+        <button id="closePdfModalBtn" type="button" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; cursor: pointer; padding: 6px 16px; border-radius: 8px; font-weight: 700; font-size: 0.88rem; transition: all 0.2s;">Close (✕)</button>
+      </div>
+    </div>
+    <div id="pdfModalFrameWrapper" style="flex: 1; width: 100%; background: #18181b; border: 1px solid var(--panel-border); border-radius: 10px; overflow: auto; position: relative;">
+      <iframe id="pdfModalFrame" src="" title="Expanded Document" style="width: 100%; height: 100%; border: none; display: block; transform-origin: top center;" allowfullscreen></iframe>
+    </div>
   </div>
 
 </body>

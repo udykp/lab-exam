@@ -1019,10 +1019,82 @@ code {
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   transition: border-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .pdf-viewer-deck-card:hover {
   border-color: rgba(37, 99, 235, 0.4);
+}
+
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--panel-border);
+  gap: 8px;
+  flex-wrap: wrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pdf-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pdf-btn:hover {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+.pdf-btn-expand {
+  background: rgba(37, 99, 235, 0.15);
+  border-color: rgba(37, 99, 235, 0.4);
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+.pdf-btn-expand:hover {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.pdf-frame-wrapper {
+  position: relative;
+  width: 100%;
+  height: 520px;
+  background: #18181b;
+  overflow: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pdf-frame-wrapper iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  transform-origin: top center;
+}
+
+.no-copy-zone {
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 
 .workspace-right-deck {
