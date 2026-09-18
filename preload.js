@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runCode: (code, language, attachments = []) => {
     ipcRenderer.send('run-code', { code, language, attachments });
   },
+  runSqlCell: (query, database) => {
+    return ipcRenderer.invoke('run-sql-cell', { query, database });
+  },
+  resetSqlDatabase: () => {
+    return ipcRenderer.invoke('reset-sql-database');
+  },
   stopCode: () => {
     ipcRenderer.send('stop-code');
   },

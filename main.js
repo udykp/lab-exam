@@ -1042,6 +1042,148 @@ ipcMain.on('code-stdin', (event, text) => {
 });
 
 
+// Execute a single SQL Cell in the MySQL Notebook
+let currentActiveSqlDatabase = 'labexam';
+
+ipcMain.handle('run-sql-cell', async (event, { query, database }) => {
+  if (!query || !query.trim()) {
+    return { success: true, output: '', executionTimeMs: 0, activeDatabase: currentActiveSqlDatabase };
+  }
+
+  // 1. Determine target database: prefer explicitly passed database from notebook, fallback to tracked session database
+  let targetDb = (database && typeof database === 'string' && database.trim())
+    ? database.trim()
+    : (currentActiveSqlDatabase || 'labexam');
+
+  // If the query creates a database, connect to labexam initially so MySQL doesn't fail with 'Unknown database'
+  const hasCreateDb = /(?:^|[\s;])CREATE\s+DATABASE\s+/i.test(query);
+
+  // Check if this query switches the database via USE <db>
+  const useMatches = [...query.matchAll(/(?:^|[\s;])USE\s+[`"']?([a-zA-Z0-9_$]+)[`"']?/gi)];
+  let switchedToDb = null;
+  if (useMatches.length > 0) {
+    switchedToDb = useMatches[useMatches.length - 1][1];
+  }
+
+  const dbToConnect = hasCreateDb ? 'labexam' : targetDb;
+  const startTime = Date.now();
+
+  return new Promise((resolve) => {
+    const proc = spawn('mysql', [
+      '-u', 'exam_user',
+      '-pexam_password',
+      '-D', dbToConnect,
+      '--table',
+      '-e', query
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    proc.on('close', (code) => {
+      const durationMs = Date.now() - startTime;
+      if (code === 0) {
+        if (switchedToDb) {
+          currentActiveSqlDatabase = switchedToDb;
+        } else if (!hasCreateDb && targetDb) {
+          currentActiveSqlDatabase = targetDb;
+        }
+
+        // If query dropped the active database, fallback to labexam
+        const dropMatch = query.match(/(?:^|[\s;])DROP\s+DATABASE\s+(?:IF\s+EXISTS\s+)?[`"']?([a-zA-Z0-9_$]+)[`"']?/i);
+        if (dropMatch && dropMatch[1].toLowerCase() === (currentActiveSqlDatabase || '').toLowerCase()) {
+          currentActiveSqlDatabase = 'labexam';
+        }
+
+        resolve({
+          success: true,
+          output: stdout.trim(),
+          activeDatabase: currentActiveSqlDatabase,
+          executionTimeMs: durationMs
+        });
+      } else {
+        const cleanedStderr = stderr.replace(/mysql: \[Warning\] Using a password on the command line interface can be insecure\.\r?\n?/g, '').trim();
+        resolve({
+          success: false,
+          error: cleanedStderr || 'SQL execution failed',
+          output: stdout.trim(),
+          activeDatabase: currentActiveSqlDatabase,
+          executionTimeMs: durationMs
+        });
+      }
+    });
+
+    proc.on('error', (err) => {
+      const durationMs = Date.now() - startTime;
+      resolve({
+        success: false,
+        error: err.message,
+        activeDatabase: currentActiveSqlDatabase,
+        executionTimeMs: durationMs
+      });
+    });
+  });
+});
+
+// Reset the MySQL database - drops any custom user-created databases and thoroughly wipes/recreates labexam
+ipcMain.handle('reset-sql-database', async () => {
+  currentActiveSqlDatabase = 'labexam';
+  return new Promise((resolve) => {
+    const runSql = (cmd, query) => {
+      return new Promise((res) => {
+        exec(`${cmd} -e "${query}"`, (err, stdout, stderr) => {
+          res({ success: !err, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() });
+        });
+      });
+    };
+
+    (async () => {
+      try {
+        // 1. Try sudo mysql first to drop/recreate labexam cleanly
+        await runSql('sudo mysql', "DROP DATABASE IF EXISTS labexam; CREATE DATABASE labexam; GRANT ALL PRIVILEGES ON labexam.* TO 'exam_user'@'localhost'; FLUSH PRIVILEGES;");
+
+        // 2. Query all custom databases created by student (e.g. Uday, test, etc.)
+        const customDbsRes = await runSql(
+          'mysql -u exam_user -pexam_password -N -B',
+          "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys', 'labexam');"
+        );
+
+        if (customDbsRes.stdout) {
+          const dbs = customDbsRes.stdout.split(/\r?\n/).map(s => s.trim().replace(/[^a-zA-Z0-9_]/g, '')).filter(Boolean);
+          for (const db of dbs) {
+            await runSql('mysql -u exam_user -pexam_password', `DROP DATABASE IF EXISTS ${db};`);
+            await runSql('sudo mysql', `DROP DATABASE IF EXISTS ${db};`);
+          }
+        }
+
+        // 3. Ensure labexam itself is clean
+        await runSql('mysql -u exam_user -pexam_password', "DROP DATABASE IF EXISTS labexam; CREATE DATABASE labexam;");
+
+        // In case exam_user didn't have permission to drop database labexam directly, drop all tables inside it
+        const tablesRes = await runSql(
+          'mysql -u exam_user -pexam_password labexam -N -B',
+          "SELECT table_name FROM information_schema.tables WHERE table_schema = 'labexam';"
+        );
+
+        if (tablesRes.stdout) {
+          const tables = tablesRes.stdout.split(/\r?\n/).map(s => s.trim().replace(/[^a-zA-Z0-9_]/g, '')).filter(Boolean);
+          if (tables.length > 0) {
+            const dropTablesList = tables.join(', ');
+            await runSql('mysql -u exam_user -pexam_password labexam', `SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS ${dropTablesList}; SET FOREIGN_KEY_CHECKS = 1;`);
+          }
+        }
+
+        resolve({ success: true, message: 'Database and custom tables reset successfully' });
+      } catch (err) {
+        resolve({ success: false, error: err.message });
+      }
+    })();
+  });
+});
+
 ipcMain.handle('get-server-url', () => {
   return remoteServerUrl || 'http://localhost:8080';
 });

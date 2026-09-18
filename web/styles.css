@@ -456,3 +456,391 @@ code {
 .shell.wide-shell {
   width: min(1680px, calc(100% - 48px));
 }
+
+/* ── SQL Notebook Cell Styles ────────────────────────────────────────────── */
+/* ── Modern Colab-Style SQL Notebook Styles ──────────────────────────────── */
+.sql-cell-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  margin-bottom: 4px;
+}
+
+.sql-cell-card:focus-within {
+  border-color: #cbd5e1;
+  border-left: 4px solid #2563eb;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);
+}
+
+.sql-cell-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fafafa;
+  padding: 5px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.sql-status-badge {
+  font-family: monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.sql-status-badge.ready {
+  color: #94a3b8;
+}
+
+.sql-status-badge.success {
+  color: #15803d;
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+}
+
+.sql-status-badge.error {
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.sql-cell-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sql-action-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.sql-action-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.sql-action-btn.delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.sql-cell-body {
+  display: flex;
+  width: 100%;
+  min-height: 70px;
+}
+
+/* Colab-style Left Gutter */
+.sql-cell-gutter {
+  width: 52px;
+  min-width: 52px;
+  background: #fafafa;
+  border-right: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+  gap: 6px;
+  user-select: none;
+}
+
+.sql-gutter-run-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 10px;
+  padding-left: 2px;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.sql-gutter-run-btn:hover {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+  transform: scale(1.08);
+}
+
+.sql-gutter-run-btn.running {
+  background: #f59e0b;
+  color: #ffffff;
+  border-color: #f59e0b;
+  animation: spin 1s linear infinite;
+  padding-left: 0;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sql-gutter-index {
+  font-family: monospace;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+/* Line numbers & Code Area */
+.sql-editor-container {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  position: relative;
+  background: #ffffff;
+}
+
+.sql-line-numbers {
+  padding: 10px 8px;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 13px;
+  line-height: 22px;
+  color: #cbd5e1;
+  text-align: right;
+  user-select: none;
+  min-width: 28px;
+  border-right: 1px solid #f8fafc;
+  background: #ffffff;
+  white-space: pre-line;
+}
+
+.sql-code-area {
+  flex: 1;
+  position: relative;
+  min-height: 60px;
+}
+
+.sql-cell-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-size: 13.5px;
+  line-height: 22px;
+  color: #0f172a;
+  background: #ffffff;
+  border: none;
+  padding: 10px 14px;
+  resize: vertical;
+  min-height: 64px;
+  outline: none;
+  tab-size: 4;
+}
+
+.sql-cell-textarea::placeholder {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Output Area */
+.sql-cell-output-container {
+  border-top: 1px solid #f1f5f9;
+  background: #ffffff;
+  padding: 12px 16px;
+}
+
+.sql-cell-output-container.empty {
+  display: none;
+}
+
+.sql-output-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sql-output-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: #64748b;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sql-table-tag {
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid #bfdbfe;
+  font-size: 0.72rem;
+}
+
+.sql-row-count {
+  font-weight: 600;
+  color: #334155;
+  font-family: monospace;
+}
+
+.sql-exec-time {
+  font-family: monospace;
+  color: #64748b;
+}
+
+.sql-view-switch {
+  display: flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sql-view-btn {
+  background: #ffffff;
+  border: none;
+  color: #64748b;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sql-view-btn.active {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.sql-table-scroll {
+  max-height: 380px;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.sql-modern-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.sql-modern-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 700;
+  padding: 9px 14px;
+  border-bottom: 1.5px solid #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.sql-modern-table th.row-num-th {
+  width: 38px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.sql-modern-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #f8fafc;
+  color: #1e293b;
+  white-space: nowrap;
+}
+
+.sql-modern-table td.row-num-td {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  background: #fafafa;
+}
+
+.sql-modern-table tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+.sql-modern-table tbody tr:hover {
+  background: #f0f9ff;
+}
+
+.sql-output-pre {
+  margin: 0;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  color: #1e293b;
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.sql-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.sql-callout.success {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+}
+
+.sql-callout.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.sql-callout .callout-icon {
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.sql-callout .callout-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.sql-callout .callout-meta {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  font-family: monospace;
+}
+
+.sql-callout .callout-body {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 4px;
+}
