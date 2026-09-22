@@ -23,6 +23,8 @@ const state = {
   examId: localStorage.getItem('securemlexam_exam_id') || 'exam-1',
   examCode: '',
   activeAttemptId: localStorage.getItem('securemlexam_attempt_id') || '',
+  activePaperId: '',
+  syncTimer: null,
   ws: null,
   currentClassStudents: [],
   selectedStudentRolls: new Set(),
@@ -1716,6 +1718,79 @@ const saveAllProgramsLocally = async () => {
   logEvent(`Successfully saved ${savedCount} programs locally to Desktop.`);
 };
 
+const startExamSyncHeartbeat = () => {
+  stopExamSyncHeartbeat();
+  state.syncTimer = setInterval(async () => {
+    if (!state.token || !state.rollNumber || !state.activeAttemptId) {
+      stopExamSyncHeartbeat();
+      return;
+    }
+    try {
+      const res = await api(`/api/assignments?roll_no=${encodeURIComponent(state.rollNumber)}`);
+      const data = res?.data || {};
+      const attempts = data.attempts || [];
+      
+      // Look for the currently active attempt
+      const activeAtt = attempts.find(a => a.id === state.activeAttemptId);
+
+      if (!activeAtt) {
+        // Attempt was cleared or reset by faculty on web portal
+        handleExamAssignmentRevoked('Your exam session has been reset by the instructor. Please sign in to start your newly assigned paper.');
+        return;
+      }
+
+      // Check if faculty reassigned student to a different paper set
+      const currentPaperId = activeAtt.paper_id || activeAtt.paper_title || '';
+      if (state.activePaperId && currentPaperId && currentPaperId !== state.activePaperId) {
+        handleExamAssignmentRevoked('Your exam paper set was updated by the instructor. Please sign in to load the new set.');
+        return;
+      }
+
+      if (activeAtt.status === 'submitted') {
+        handleExamAssignmentRevoked('This exam attempt has been submitted and locked.');
+        return;
+      }
+    } catch (_) {
+      // Network timeout / offline: silently ignore so student is never interrupted
+    }
+  }, 8000);
+};
+
+const stopExamSyncHeartbeat = () => {
+  if (state.syncTimer) {
+    clearInterval(state.syncTimer);
+    state.syncTimer = null;
+  }
+};
+
+const handleExamAssignmentRevoked = (reason) => {
+  stopExamSyncHeartbeat();
+  
+  // Clear session state
+  state.token = '';
+  state.securityArmed = false;
+  state.activeAttemptId = '';
+  state.activePaperId = '';
+  localStorage.removeItem('securemlexam_token');
+  localStorage.removeItem('securemlexam_attempt_id');
+
+  // Hide exam UI
+  el('studentTabs')?.classList.add('hidden');
+  el('activeQuestionCard')?.classList.add('hidden');
+  el('editorArea')?.classList.add('hidden');
+  el('endExamBtn')?.classList.add('hidden');
+  if (el('endExamConfirm')) el('endExamConfirm').classList.add('hidden');
+
+  // Return to login screen
+  updateGridLayout();
+
+  const errorBox = el('loginError');
+  if (errorBox) {
+    errorBox.textContent = `ℹ️ ${reason || 'Your exam assignment was reset. Please sign in again.'}`;
+    errorBox.classList.remove('hidden');
+  }
+};
+
 const loadStudentExam = async () => {
   if (!state.token) return;
   try {
@@ -1751,6 +1826,7 @@ const loadStudentExam = async () => {
         throw new Error('You have already submitted this exam. Access locked.');
       }
       state.activeAttemptId = activeAtt.id;
+      state.activePaperId = activeAtt.paper_id || activeAtt.paper_title || '';
       state.examId = activeAtt.exam_id;
       state.examCode = activeAtt.exam_code || enteredCode;
       if (examLabel) examLabel.textContent = activeAtt.exam_title ? `Exam: ${activeAtt.exam_title}` : `Assigned Lab Exam`;
@@ -2018,6 +2094,9 @@ const loadStudentExam = async () => {
       state.securityArmed = true;
       console.log('[ExamGuard] Security focus checks armed.');
     }, 2000);
+
+    // Start background sync heartbeat to detect if faculty reassigns/clears set
+    startExamSyncHeartbeat();
   } catch (error) {
     if (error.message.includes('security violation')) {
       triggerViolationShutdown('lockout', 'Student has been permanently locked out due to previous security violation.');
@@ -2507,8 +2586,13 @@ const doEndExam = async () => {
       logEvent('Exam attempt submitted and locked successfully.');
     } catch (err) {
       logEvent(`Warning: final attempt submit failed: ${err.message}`);
+      alert(`Cannot end exam: Network connection unavailable or server error (${err.message}). Please ensure your network is connected and try again.`);
+      if (el('endExamConfirm')) el('endExamConfirm').classList.add('hidden');
+      return;
     }
   }
+
+  stopExamSyncHeartbeat();
 
   // Clear local autosave snapshot
   const autosaveKey = getAutosaveKey();
