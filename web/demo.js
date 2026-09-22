@@ -28,6 +28,46 @@ const BOILERPLATES = {
   mysql: `-- Write your SQL query here\n`
 };
 
+const PRESETS = {
+  python_basic: {
+    title: 'Python 3 Playground',
+    language: 'python',
+    prompt: 'Write and test Python code. Standard library modules (math, random, collections, etc.) are available.',
+    code: `# Python 3 Sandbox\nimport math\n\ndef calculate_primes(n):\n    primes = []\n    for num in range(2, n + 1):\n        if all(num % i != 0 for i in range(2, int(math.sqrt(num)) + 1)):\n            primes.append(num)\n    return primes\n\nprint("First 15 primes:", calculate_primes(50))\n`
+  },
+  data_analysis: {
+    title: 'Data Science & CSV Analysis',
+    language: 'python',
+    prompt: 'Read and analyze the student scores dataset. Compute summary metrics and department statistics.',
+    code: `# Data Analysis Demo\nimport pandas as pd\nimport io\n\ncsv_data = """student_id,name,department,score,attendance\n101,Alice,CS,92,96\n102,Bob,ECE,78,85\n103,Charlie,CS,88,90\n104,Diana,ME,95,98\n105,Evan,ECE,64,72\n"""\n\ndf = pd.read_csv(io.StringIO(csv_data))\nprint("Dataset Summary:")\nprint(df.describe())\nprint("\\nAverage Score by Department:")\nprint(df.groupby('department')['score'].mean())\n`,
+    files: [
+      {
+        filename: 'students.csv',
+        content: btoa('student_id,name,department,score,attendance\n101,Alice,CS,92,96\n102,Bob,ECE,78,85\n103,Charlie,CS,88,90\n104,Diana,ME,95,98\n105,Evan,ECE,64,72\n'),
+        dataUrl: 'data:text/csv;base64,' + btoa('student_id,name,department,score,attendance\n101,Alice,CS,92,96\n102,Bob,ECE,78,85\n103,Charlie,CS,88,90\n104,Diana,ME,95,98\n105,Evan,ECE,64,72\n')
+      }
+    ]
+  },
+  matplotlib_plot: {
+    title: 'Data Visualization (Matplotlib)',
+    language: 'python',
+    prompt: 'Generate charts and plots. Saved images (e.g. plt.savefig) are automatically rendered in the Plots tab.',
+    code: `# Matplotlib Visualization Demo\nimport matplotlib.pyplot as plt\nimport numpy as np\n\nx = np.linspace(0, 10, 100)\ny1 = np.sin(x)\ny2 = np.cos(x)\n\nplt.figure(figsize=(8, 4.5))\nplt.plot(x, y1, label='Sin(x)', color='#3b82f6', linewidth=2)\nplt.plot(x, y2, label='Cos(x)', color='#10b981', linewidth=2, linestyle='--')\nplt.title('Sine & Cosine Waveforms', fontsize=13, fontweight='bold')\nplt.xlabel('X Axis')\nplt.ylabel('Y Axis')\nplt.legend()\nplt.grid(True, alpha=0.3)\n\n# Save the plot image so it appears in the Plots tab viewer\nplt.tight_layout()\nplt.savefig('sine_wave.png', dpi=150)\nprint("Plot generated and saved to sine_wave.png.")\n`
+  },
+  cpp_algo: {
+    title: 'C++ Algorithm Challenge',
+    language: 'cpp',
+    prompt: 'Implement a binary search algorithm in C++ and test it with a vector.',
+    code: `#include <iostream>\n#include <vector>\n\nusing namespace std;\n\nint binarySearch(const vector<int>& arr, int target) {\n    int low = 0, high = arr.size() - 1;\n    while (low <= high) {\n        int mid = low + (high - low) / 2;\n        if (arr[mid] == target) return mid;\n        if (arr[mid] < target) low = mid + 1;\n        else high = mid - 1;\n    }\n    return -1;\n}\n\nint main() {\n    vector<int> numbers = {12, 24, 35, 47, 53, 68, 79, 88, 95};\n    int target = 53;\n    int index = binarySearch(numbers, target);\n    cout << "Found target " << target << " at index " << index << endl;\n    return 0;\n}\n`
+  },
+  sql_sandbox: {
+    title: 'MySQL Database Sandbox',
+    language: 'mysql',
+    prompt: 'Write and test SQL queries in the interactive notebook cells below.',
+    code: `-- Create a sample table\nCREATE TABLE students (\n    id INT PRIMARY KEY,\n    name VARCHAR(50),\n    major VARCHAR(30),\n    gpa DECIMAL(3,2)\n);\n\n-- Insert sample records\nINSERT INTO students VALUES \n(1, 'Alice Smith', 'Computer Science', 3.85),\n(2, 'Bob Jones', 'Data Science', 3.62),\n(3, 'Charlie Brown', 'Mathematics', 3.91);\n\n-- Query top students\nSELECT name, major, gpa FROM students WHERE gpa >= 3.70 ORDER BY gpa DESC;\n`
+  }
+};
+
 const isBoilerplateOrEmpty = (code) => {
   if (!code || !code.trim()) return true;
   const trimmed = code.trim();
@@ -651,10 +691,49 @@ const loadTabState = (index) => {
   el('demoQFiles').value = '';
 };
 
+function createQuestionFromPreset(presetKey) {
+  const preset = PRESETS[presetKey];
+  const nextNum = state.questions.length + 1;
+  const newQ = {
+    id: `demo-q-${Date.now()}`,
+    number: nextNum,
+    title: preset ? preset.title : `Program ${nextNum}`,
+    prompt: preset ? preset.prompt : `Write your instructions here...`,
+    language: preset ? preset.language : 'python',
+    localFiles: preset && preset.files ? [...preset.files] : []
+  };
+
+  saveCurrentTabState();
+  state.questions.push(newQ);
+  state.drafts[newQ.id] = {
+    code: preset ? preset.code : (BOILERPLATES[newQ.language] || ''),
+    language: newQ.language,
+    terminal: 'Terminal ready. Write code and click Run Code.',
+    terminalColor: '#10b981',
+  };
+
+  state.activeQuestionIndex = state.questions.length - 1;
+  renderTabs();
+  loadTabState(state.activeQuestionIndex);
+}
+
 // Render program tab bar
 const renderTabs = () => {
   const tabsContainer = el('studentTabs');
+  const launcher = el('presetLauncherWrapper');
+  const splitContainer = el('workspaceSplitContainer');
+
+  if (state.questions.length === 0) {
+    if (tabsContainer) tabsContainer.innerHTML = '';
+    if (launcher) launcher.classList.remove('hidden');
+    if (splitContainer) splitContainer.classList.add('hidden');
+    return;
+  }
+
+  if (launcher) launcher.classList.add('hidden');
+  if (splitContainer) splitContainer.classList.remove('hidden');
   if (!tabsContainer) return;
+
   tabsContainer.innerHTML = '';
 
   state.questions.forEach((q, idx) => {
@@ -704,13 +783,10 @@ const renderTabs = () => {
         state.activeQuestionIndex--;
       }
 
+      renderTabs();
       if (state.questions.length > 0) {
         loadTabState(state.activeQuestionIndex);
-      } else {
-        el('activeQuestionCard').classList.add('hidden');
-        el('editorArea').classList.add('hidden');
       }
-      renderTabs();
     });
     btn.appendChild(closeBtn);
 
@@ -723,44 +799,32 @@ const renderTabs = () => {
     tabsContainer.appendChild(btn);
   });
 
-  // Add '+' button if tabs count < 10
+  // Add '+ New Program' button if tabs count < 10
   if (state.questions.length < 10) {
     const addBtn = document.createElement('button');
     addBtn.className = 'tab-btn-add';
-    addBtn.textContent = '+';
+    addBtn.textContent = '+ New Program';
     addBtn.type = 'button';
-    addBtn.style.padding = '4px 14px';
-    addBtn.style.background = '#10b981';
-    addBtn.style.border = 'none';
+    addBtn.style.padding = '6px 12px';
+    addBtn.style.background = 'var(--bg-2)';
+    addBtn.style.border = '1px dashed var(--panel-border)';
     addBtn.style.borderRadius = '8px';
-    addBtn.style.color = '#ffffff';
-    addBtn.style.fontWeight = 'bold';
+    addBtn.style.color = 'var(--accent-2)';
+    addBtn.style.fontWeight = '700';
     addBtn.style.cursor = 'pointer';
-    addBtn.style.fontSize = '1.1rem';
-    addBtn.style.marginLeft = '8px';
-    addBtn.style.transition = 'all 0.2s';
+    addBtn.style.fontSize = '0.8rem';
+    addBtn.style.marginLeft = '4px';
+    addBtn.style.transition = 'all 0.15s ease';
+    addBtn.addEventListener('mouseenter', () => {
+      addBtn.style.background = 'var(--panel)';
+      addBtn.style.borderColor = 'var(--accent)';
+    });
+    addBtn.addEventListener('mouseleave', () => {
+      addBtn.style.background = 'var(--bg-2)';
+      addBtn.style.borderColor = 'var(--panel-border)';
+    });
     addBtn.addEventListener('click', () => {
-      const nextQuestionNumber = state.questions.length + 1;
-      const newQ = {
-        id: `demo-q-${Date.now()}`,
-        number: nextQuestionNumber,
-        title: `Program ${nextQuestionNumber}`,
-        prompt: `Write your instructions here...`,
-        localFiles: []
-      };
-      saveCurrentTabState();
-      state.questions.push(newQ);
-      state.drafts[newQ.id] = {
-        code: '',
-        language: 'python',
-        terminal: 'Terminal ready. Write code and click Run Code.',
-        terminalColor: '#10b981',
-      };
-      state.activeQuestionIndex = state.questions.length - 1;
-      loadTabState(state.activeQuestionIndex);
-      el('activeQuestionCard').classList.remove('hidden');
-      el('editorArea').classList.remove('hidden');
-      renderTabs();
+      createQuestionFromPreset('python_basic');
     });
     tabsContainer.appendChild(addBtn);
   }
@@ -1032,11 +1096,10 @@ const getActiveTheme = () => localStorage.getItem('labexam_theme') || 'dark';
 const applyTheme = (theme) => {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('labexam_theme', theme);
-  const btn = el('themeToggleBtn');
-  if (btn) {
-    btn.innerHTML = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+  document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
+    btn.innerHTML = theme === 'dark' ? 'Light' : 'Dark';
     btn.setAttribute('title', theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode');
-  }
+  });
   if (typeof monaco !== 'undefined' && monaco.editor) {
     monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs');
   }
@@ -1050,10 +1113,12 @@ const toggleTheme = () => {
 
 // Initialize theme on evaluation
 applyTheme(getActiveTheme());
-const themeToggleBtn = el('themeToggleBtn');
-if (themeToggleBtn) {
-  themeToggleBtn.addEventListener('click', toggleTheme);
-}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.theme-toggle-btn');
+  if (btn) {
+    toggleTheme();
+  }
+});
 
 // Initialize Monaco Editor
 if (typeof require !== 'undefined') {
@@ -2130,6 +2195,234 @@ if (el('resetSqlDbBtn')) {
   });
 }
 
+// Toggle Edit Question Drawer
+if (el('toggleEditQuestionBtn')) {
+  el('toggleEditQuestionBtn').addEventListener('click', () => {
+    const drawer = el('questionEditDrawer');
+    if (!drawer) return;
+    const isHidden = drawer.classList.contains('hidden');
+    if (isHidden) {
+      const q = state.questions[state.activeQuestionIndex];
+      if (q) {
+        if (el('demoQTitle')) el('demoQTitle').value = q.title || '';
+        if (el('demoQPrompt')) el('demoQPrompt').value = q.prompt || '';
+      }
+      drawer.classList.remove('hidden');
+      el('toggleEditQuestionBtn').textContent = 'Close Editor';
+    } else {
+      drawer.classList.add('hidden');
+      el('toggleEditQuestionBtn').textContent = 'Edit Details';
+    }
+  });
+}
+
+if (el('cancelEditQuestionBtn')) {
+  el('cancelEditQuestionBtn').addEventListener('click', () => {
+    if (el('questionEditDrawer')) el('questionEditDrawer').classList.add('hidden');
+    if (el('toggleEditQuestionBtn')) el('toggleEditQuestionBtn').textContent = 'Edit Details';
+  });
+}
+
+// Apply changes in In-Place Question Editor
+if (el('applyDemoQBtn')) {
+  el('applyDemoQBtn').addEventListener('click', async () => {
+    const btn = el('applyDemoQBtn');
+    const originalText = btn.textContent;
+
+    const q = state.questions[state.activeQuestionIndex];
+    if (!q) return;
+
+    const newTitle = el('demoQTitle') ? el('demoQTitle').value.trim() : '';
+    const newPrompt = el('demoQPrompt') ? el('demoQPrompt').value.trim() : '';
+
+    if (!newTitle) {
+      btn.disabled = true;
+      btn.textContent = 'Title Required';
+      btn.style.background = '#dc2626';
+      btn.style.color = '#ffffff';
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.background = '';
+        btn.style.color = '';
+        btn.disabled = false;
+      }, 2000);
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+
+    q.title = newTitle;
+    q.prompt = newPrompt;
+
+    const fileInput = el('demoQFiles');
+    if (fileInput && fileInput.files.length > 0) {
+      const localFiles = [...(q.localFiles || [])];
+      const readPromises = Array.from(fileInput.files).map(file => {
+        return new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const base64Data = e.target.result.split(',')[1];
+            localFiles.push({
+              filename: file.name,
+              content: base64Data,
+              dataUrl: e.target.result
+            });
+            resolve();
+          };
+          reader.readAsDataURL(file);
+        });
+      });
+      await Promise.all(readPromises);
+      q.localFiles = localFiles;
+      fileInput.value = '';
+    }
+
+    loadTabState(state.activeQuestionIndex);
+    renderTabs();
+
+    btn.textContent = 'Saved';
+    btn.style.background = '#10b981';
+    btn.style.color = '#ffffff';
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.disabled = false;
+      if (el('questionEditDrawer')) el('questionEditDrawer').classList.add('hidden');
+      if (el('toggleEditQuestionBtn')) el('toggleEditQuestionBtn').textContent = 'Edit Details';
+    }, 1200);
+  });
+}
+
+// Preset Launcher Cards
+document.querySelectorAll('.preset-card').forEach(card => {
+  card.addEventListener('click', () => {
+    const presetKey = card.getAttribute('data-preset');
+    if (presetKey === 'custom_blank') {
+      const nextNum = state.questions.length + 1;
+      const newQ = {
+        id: `demo-q-${Date.now()}`,
+        number: nextNum,
+        title: `Program ${nextNum}`,
+        prompt: `Write your instructions here...`,
+        language: 'python',
+        localFiles: []
+      };
+      saveCurrentTabState();
+      state.questions.push(newQ);
+      state.drafts[newQ.id] = {
+        code: BOILERPLATES.python,
+        language: 'python',
+        terminal: 'Terminal ready. Write code and click Run Code.',
+        terminalColor: '#10b981',
+      };
+      state.activeQuestionIndex = state.questions.length - 1;
+      renderTabs();
+      loadTabState(state.activeQuestionIndex);
+    } else if (PRESETS[presetKey]) {
+      createQuestionFromPreset(presetKey);
+    }
+  });
+});
+
+// Quick Preset Select in Top Navbar
+if (el('demoQuickPresetSelect')) {
+  el('demoQuickPresetSelect').addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val && PRESETS[val]) {
+      createQuestionFromPreset(val);
+      e.target.value = '';
+    }
+  });
+}
+
+// Format Code Button
+if (el('formatCodeBtn')) {
+  el('formatCodeBtn').addEventListener('click', () => {
+    formatCurrentCode();
+  });
+}
+
+// Export Question Package as JSON
+if (el('exportQuestionBtn')) {
+  el('exportQuestionBtn').addEventListener('click', () => {
+    const q = state.questions[state.activeQuestionIndex];
+    if (!q) {
+      alert('No active question to export.');
+      return;
+    }
+    const draft = state.drafts[q.id] || {};
+    const packageData = {
+      schemaVersion: '1.0',
+      exportedAt: new Date().toISOString(),
+      title: q.title || `Program ${state.activeQuestionIndex + 1}`,
+      prompt: q.prompt || '',
+      language: draft.language || q.language || 'python',
+      initialCode: (draft.language === 'mysql') ? getMergedSqlCode(q.id) : (draft.code || getEditorValue()),
+      localFiles: q.localFiles || []
+    };
+
+    const jsonStr = JSON.stringify(packageData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(q.title || 'question').toLowerCase().replace(/[^a-z0-9]+/g, '_')}_package.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+}
+
+// Import Question Package JSON
+if (el('importQuestionBtn') && el('importQuestionInput')) {
+  el('importQuestionBtn').addEventListener('click', () => {
+    el('importQuestionInput').click();
+  });
+
+  el('importQuestionInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        if (!data.title && !data.prompt) {
+          throw new Error('Invalid question package format.');
+        }
+        const nextNum = state.questions.length + 1;
+        const newQ = {
+          id: `demo-q-${Date.now()}`,
+          number: nextNum,
+          title: data.title || `Program ${nextNum}`,
+          prompt: data.prompt || '',
+          language: data.language || 'python',
+          localFiles: data.localFiles || []
+        };
+
+        saveCurrentTabState();
+        state.questions.push(newQ);
+        state.drafts[newQ.id] = {
+          code: data.initialCode || (BOILERPLATES[newQ.language] || ''),
+          language: newQ.language,
+          terminal: 'Terminal ready. Write code and click Run Code.',
+          terminalColor: '#10b981',
+        };
+
+        state.activeQuestionIndex = state.questions.length - 1;
+        renderTabs();
+        loadTabState(state.activeQuestionIndex);
+      } catch (err) {
+        alert('Failed to import question JSON: ' + err.message);
+      }
+      e.target.value = '';
+    };
+    reader.readAsText(file);
+  });
+}
+
 // Exit button
 el('exitDemoBtn').addEventListener('click', () => {
   window.location.href = 'index.html';
@@ -2155,5 +2448,10 @@ if (window.electronAPI) {
   });
 }
 
-// Initialize with tab setup
-renderTabs();
+// Auto-initialize with Python playground if empty
+if (state.questions.length === 0) {
+  createQuestionFromPreset('python_basic');
+} else {
+  renderTabs();
+  loadTabState(state.activeQuestionIndex);
+}
