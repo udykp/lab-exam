@@ -574,7 +574,7 @@ const applyTheme = (theme) => {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('labexam_theme', theme);
   document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
-    btn.innerHTML = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
+    btn.innerHTML = theme === 'dark' ? 'Light' : 'Dark';
     btn.setAttribute('title', theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode');
   });
   if (typeof monaco !== 'undefined' && monaco.editor) {

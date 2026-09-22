@@ -518,144 +518,105 @@ async function renderPdfPagesToContainer(container, pdfDoc, scale = 1.0, fitWidt
   }
 }
 
-// Load tab state into UI
+const renderDemoFiles = () => {
+  const container = el('demoFilesList');
+  const countBadge = el('attachedFilesCountBadge');
+  if (!container) return;
+
+  const q = state.questions[state.activeQuestionIndex];
+  const files = (q && q.localFiles) ? q.localFiles : [];
+
+  if (countBadge) countBadge.textContent = files.length;
+
+  if (files.length === 0) {
+    container.innerHTML = `
+      <div id="noFilesPlaceholder" style="text-align: center; padding: 24px 12px; color: var(--muted); font-size: 0.8rem; border: 1.5px dashed var(--panel-border); border-radius: 8px;">
+        No files attached yet.<br>Click <strong>+ Add Files</strong> to upload CSV, PDF, or images.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = files.map((file, idx) => {
+    const isCsv = file.filename.endsWith('.csv') || file.filename.endsWith('.tsv');
+    const isPdf = file.filename.endsWith('.pdf');
+    const isImg = file.filename.match(/\.(png|jpe?g|gif|webp|svg)$/i);
+    
+    let tag = 'FILE';
+    let tagBg = 'rgba(100, 116, 139, 0.15)';
+    let tagColor = '#94a3b8';
+
+    if (isCsv) {
+      tag = 'CSV';
+      tagBg = 'rgba(59, 130, 246, 0.15)';
+      tagColor = '#3b82f6';
+    } else if (isPdf) {
+      tag = 'PDF';
+      tagBg = 'rgba(239, 68, 68, 0.15)';
+      tagColor = '#ef4444';
+    } else if (isImg) {
+      tag = 'IMAGE';
+      tagBg = 'rgba(16, 185, 129, 0.15)';
+      tagColor = '#10b981';
+    }
+
+    return `
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--bg-2); border: 1px solid var(--panel-border); border-radius: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; flex: 1; cursor: pointer;" class="demo-file-open-action" data-index="${idx}">
+          <span style="font-size: 0.68rem; font-weight: 800; padding: 2px 5px; border-radius: 4px; background: ${tagBg}; color: ${tagColor};">${tag}</span>
+          <span style="font-size: 0.82rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(file.filename)}</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <button type="button" class="demo-file-delete-btn" data-index="${idx}" title="Delete file" style="background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 2px 6px; font-size: 0.8rem; border-radius: 4px; transition: all 0.15s;">✕</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.demo-file-open-action').forEach(elItem => {
+    elItem.addEventListener('click', () => {
+      const idx = parseInt(elItem.getAttribute('data-index'), 10);
+      const file = files[idx];
+      if (!file) return;
+
+      if (file.filename.endsWith('.csv') || file.filename.endsWith('.tsv')) {
+        switchBottomTab('dataset');
+        const select = el('datasetFileSelect');
+        if (select) {
+          select.value = file.filename;
+          select.dispatchEvent(new Event('change'));
+        }
+      } else if (file.filename.endsWith('.pdf')) {
+        if (typeof window.openPdfModal === 'function') {
+          const pdfUrl = file.dataUrl || `data:application/pdf;base64,${file.content}`;
+          window.openPdfModal(pdfUrl, file.filename);
+        }
+      } else if (file.filename.match(/\.(png|jpe?g|gif|webp|svg)$/i)) {
+        const imgSrc = file.dataUrl || `data:image/png;base64,${file.content}`;
+        openImageLightbox(imgSrc);
+      }
+    });
+  });
+
+  container.querySelectorAll('.demo-file-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.getAttribute('data-index'), 10);
+      files.splice(idx, 1);
+      q.localFiles = files;
+      loadDatasetsForDemoQuestion(q.localFiles);
+      renderDemoFiles();
+    });
+  });
+};
+
+// Switch Active Tab State
 const loadTabState = (index) => {
   state.activeQuestionIndex = index;
   const q = state.questions[index];
   if (!q) return;
 
-  el('questionLabel').textContent = `Question ${q.number || (index + 1)}`;
-  el('questionTitle').textContent = q.title || `Program ${index + 1}`;
-  el('questionPrompt').textContent = q.prompt || 'Your question prompt will appear here.';
-
-  const attachDiv = el('studentAttachments');
-  if (attachDiv) {
-    if (q.localFiles && q.localFiles.length > 0) {
-      attachDiv.innerHTML = q.localFiles.map(file => {
-        const lower = file.filename.toLowerCase();
-        const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
-        const isTabular = lower.endsWith('.csv') || lower.endsWith('.tsv');
-        const isPdf = lower.endsWith('.pdf');
-
-        if (isImage) {
-          return `
-            <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 12px;">
-              <img class="student-attachment-image" src="${file.dataUrl}" alt="${file.filename}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid var(--panel-border); object-fit: contain; background: var(--bg-2); cursor: zoom-in;" />
-            </div>
-          `;
-        }
-
-        if (isPdf) {
-          return `
-            <div class="pdf-viewer-deck-card no-copy-zone" oncontextmenu="return false;">
-              <div class="pdf-toolbar">
-                <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                  <span style="font-weight: 700; font-size: 0.82rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Document: ${file.filename}</span>
-                  <span style="font-size: 0.7rem; color: var(--muted); background: var(--panel); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--panel-border); font-weight: 600;">PDF</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px; flex-shrink: 0;">
-                  <button type="button" class="pdf-btn pdf-split-zoom-out" title="Zoom Out">🔍-</button>
-                  <span class="pdf-split-zoom-label" style="font-size: 0.75rem; color: var(--muted); font-weight: 600; min-width: 38px; text-align: center;">100%</span>
-                  <button type="button" class="pdf-btn pdf-split-zoom-in" title="Zoom In">🔍+</button>
-                  <button type="button" class="pdf-btn pdf-split-zoom-reset" title="Reset Zoom">Reset</button>
-                  <button type="button" class="pdf-btn pdf-btn-expand pdf-split-expand-btn" data-url="${file.dataUrl}" data-title="${file.filename}" title="Expand Document">⛶ Expand</button>
-                </div>
-              </div>
-              <div class="pdf-frame-wrapper no-copy-zone">
-                <div class="pdf-canvas-container no-copy-zone" data-pdf-url="${file.dataUrl}">
-                  <div class="pdf-loading-indicator"><div class="pdf-loading-spinner"></div><span>Loading document...</span></div>
-                </div>
-              </div>
-            </div>
-          `;
-        }
-
-        if (isTabular) {
-          return `
-            <div class="dataset-resource-card">
-              <div class="dataset-resource-info">
-                <span class="dataset-resource-name">Dataset: ${file.filename}</span>
-                <span class="dataset-resource-meta">Available in code as '${file.filename}'</span>
-              </div>
-              <button type="button" class="dataset-resource-btn view-dataset-tab-btn" data-filename="${file.filename}">View Table &rarr;</button>
-            </div>
-          `;
-        }
-
-        return `
-          <div class="dataset-resource-card">
-            <div class="dataset-resource-info">
-              <span class="dataset-resource-name">File: ${file.filename}</span>
-              <span class="dataset-resource-meta">Available in workspace as '${file.filename}'</span>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      attachDiv.querySelectorAll('.student-attachment-image').forEach(img => {
-        img.addEventListener('click', () => openImageLightbox(img.src));
-      });
-
-      attachDiv.querySelectorAll('.view-dataset-tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          switchBottomTab('dataset');
-        });
-      });
-
-      // Bind interactive controls and render canvas for embedded PDF cards
-      attachDiv.querySelectorAll('.pdf-viewer-deck-card').forEach(card => {
-        const container = card.querySelector('.pdf-canvas-container');
-        const zoomLabel = card.querySelector('.pdf-split-zoom-label');
-        const expandBtn = card.querySelector('.pdf-split-expand-btn');
-        const pdfUrl = container ? container.getAttribute('data-pdf-url') : '';
-        const title = expandBtn ? expandBtn.getAttribute('data-title') : 'Document';
-        let currentZoom = 1.0;
-        let loadedPdfDoc = null;
-
-        if (pdfUrl && container) {
-          getPdfDocument(pdfUrl).then(doc => {
-            loadedPdfDoc = doc;
-            renderPdfPagesToContainer(container, doc, 1.0, true);
-          }).catch(err => {
-            console.error('Failed to render split PDF:', err);
-            container.innerHTML = `<div style="padding: 24px; color: #ef4444; text-align: center;">Failed to load PDF: ${err.message || err}</div>`;
-          });
-        }
-
-        const updateFrameZoom = (newZoom) => {
-          if (!loadedPdfDoc || !container) return;
-          currentZoom = Math.min(2.5, Math.max(0.6, Math.round(newZoom * 100) / 100));
-          if (zoomLabel) zoomLabel.textContent = `${Math.round(currentZoom * 100)}%`;
-          renderPdfPagesToContainer(container, loadedPdfDoc, currentZoom, true);
-        };
-
-        const zoomInBtn = card.querySelector('.pdf-split-zoom-in');
-        if (zoomInBtn) {
-          zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoom + 0.25));
-        }
-
-        const zoomOutBtn = card.querySelector('.pdf-split-zoom-out');
-        if (zoomOutBtn) {
-          zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoom - 0.25));
-        }
-
-        const zoomResetBtn = card.querySelector('.pdf-split-zoom-reset');
-        if (zoomResetBtn) {
-          zoomResetBtn.addEventListener('click', () => updateFrameZoom(1.0));
-        }
-
-        if (expandBtn) {
-          expandBtn.addEventListener('click', () => {
-            if (typeof window.openPdfModal === 'function') {
-              window.openPdfModal(loadedPdfDoc || pdfUrl, title);
-            }
-          });
-        }
-      });
-    } else {
-      attachDiv.innerHTML = '';
-    }
-  }
+  renderDemoFiles();
 
   // Load datasets if attached
   loadDatasetsForDemoQuestion(q.localFiles);
@@ -685,10 +646,7 @@ const loadTabState = (index) => {
   document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === index);
   });
-
-  el('demoQTitle').value = q.title || '';
-  el('demoQPrompt').value = q.prompt || '';
-  el('demoQFiles').value = '';
+};
 };
 
 function createQuestionFromPreset(presetKey) {
@@ -2423,27 +2381,111 @@ if (el('importQuestionBtn') && el('importQuestionInput')) {
   });
 }
 
+// Add local file attachments (CSV, PDF, Images, etc.)
+if (el('addLocalFileBtn') && el('demoAttachFileInput')) {
+  el('addLocalFileBtn').addEventListener('click', () => {
+    el('demoAttachFileInput').click();
+  });
+
+  el('demoAttachFileInput').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const q = state.questions[state.activeQuestionIndex];
+    if (!q) return;
+    if (!q.localFiles) q.localFiles = [];
+
+    for (const file of files) {
+      const isCsv = file.name.endsWith('.csv') || file.name.endsWith('.tsv') || file.name.endsWith('.txt') || file.name.endsWith('.json');
+
+      const fileData = await new Promise((resolve) => {
+        const reader = new FileReader();
+        if (isCsv) {
+          reader.onload = (ev) => {
+            const text = ev.target.result;
+            let base64 = '';
+            try {
+              base64 = btoa(unescape(encodeURIComponent(text)));
+            } catch (err) {
+              base64 = btoa(text);
+            }
+            resolve({
+              filename: file.name,
+              content: base64,
+              dataUrl: `data:text/plain;base64,${base64}`
+            });
+          };
+          reader.readAsText(file);
+        } else {
+          reader.onload = (ev) => {
+            const dataUrl = ev.target.result;
+            const base64Content = dataUrl.split(',')[1] || '';
+            resolve({
+              filename: file.name,
+              content: base64Content,
+              dataUrl: dataUrl
+            });
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+
+      const existingIdx = q.localFiles.findIndex(f => f.filename === fileData.filename);
+      if (existingIdx >= 0) {
+        q.localFiles[existingIdx] = fileData;
+      } else {
+        q.localFiles.push(fileData);
+      }
+    }
+
+    loadDatasetsForDemoQuestion(q.localFiles);
+    renderDemoFiles();
+    e.target.value = '';
+  });
+}
+
 // Exit button
-el('exitDemoBtn').addEventListener('click', () => {
-  window.location.href = 'index.html';
-});
+if (el('exitDemoBtn')) {
+  el('exitDemoBtn').addEventListener('click', () => {
+    window.location.href = 'index.html';
+  });
+}
 
 // Window controls listeners
-if (window.electronAPI) {
+const demoMinBtn = el('demoMinimizeBtn');
+const demoFullBtn = el('demoFullscreenBtn');
+const demoCloseBtn = el('demoCloseBtn');
+
+if (demoMinBtn) {
+  demoMinBtn.addEventListener('click', () => {
+    if (window.electronAPI && typeof window.electronAPI.minimizeApp === 'function') {
+      window.electronAPI.minimizeApp();
+    }
+  });
+}
+
+if (demoFullBtn) {
   let isFullscreen = false;
-
-  el('demoMinimizeBtn').addEventListener('click', () => {
-    window.electronAPI.minimizeApp();
+  demoFullBtn.addEventListener('click', () => {
+    if (window.electronAPI) {
+      if (typeof window.electronAPI.toggleMaximize === 'function') {
+        window.electronAPI.toggleMaximize();
+      } else if (typeof window.electronAPI.requestFullscreen === 'function') {
+        isFullscreen = !isFullscreen;
+        window.electronAPI.requestFullscreen(isFullscreen);
+      }
+    }
   });
+}
 
-  el('demoFullscreenBtn').addEventListener('click', () => {
-    isFullscreen = !isFullscreen;
-    window.electronAPI.requestFullscreen(isFullscreen);
-  });
-
-  el('demoCloseBtn').addEventListener('click', () => {
+if (demoCloseBtn) {
+  demoCloseBtn.addEventListener('click', () => {
     if (confirm('Are you sure you want to close SecureLab? Any unsaved changes will be lost.')) {
-      window.electronAPI.exitApp();
+      if (window.electronAPI && typeof window.electronAPI.exitApp === 'function') {
+        window.electronAPI.exitApp();
+      } else {
+        window.close();
+      }
     }
   });
 }

@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   requestFullscreen: (fullscreen) => {
     ipcRenderer.send('request-fullscreen', fullscreen);
   },
+  toggleMaximize: () => {
+    ipcRenderer.send('toggle-maximize');
+  },
   lockExamWindow: () => {
     ipcRenderer.send('lock-exam-window');
   },

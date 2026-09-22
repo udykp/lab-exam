@@ -337,7 +337,24 @@ app.on('will-quit', () => {
 // IPC communication endpoints
 ipcMain.on('request-fullscreen', (event, fullscreen) => {
   if (mainWindow) {
-    mainWindow.setFullScreen(fullscreen);
+    if (typeof fullscreen === 'boolean') {
+      mainWindow.setFullScreen(fullscreen);
+    } else {
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    }
+  }
+});
+
+ipcMain.on('toggle-maximize', () => {
+  if (mainWindow) {
+    if (mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
+    }
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
   }
 });
 

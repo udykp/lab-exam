@@ -284,7 +284,7 @@
       </button>
       <input id="importQuestionInput" type="file" accept=".json" class="hidden" />
 
-      <button id="themeToggleBtn" type="button" class="theme-toggle-btn auth-theme-toggle" title="Toggle Light / Dark Mode">☀️ Light</button>
+      <button id="themeToggleBtn" type="button" class="theme-toggle-btn auth-theme-toggle" title="Toggle Light / Dark Mode">Light</button>
       <button id="exitDemoBtn" class="demo-btn-exit" type="button">Exit Demo</button>
 
       <!-- Frameless Window Controls -->
@@ -361,52 +361,32 @@
     </div>
 
     <div id="workspaceSplitContainer" class="workspace-split-container">
-      <!-- LEFT COLUMN: Program Tabs & Interactive Question Card -->
-      <aside class="workspace-left-deck">
-        <!-- Student tabs bar -->
-        <div id="studentTabs" style="display: flex; gap: 8px; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;"></div>
+      <!-- LEFT COLUMN: Program Tabs & Attached Files Deck -->
+      <aside class="workspace-left-deck" style="max-width: 320px; width: 320px; flex-shrink: 0;">
+        <!-- Program Tabs Bar -->
+        <div id="studentTabs" style="display: flex; gap: 8px; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;"></div>
 
-        <!-- Active Question card -->
-        <div id="activeQuestionCard" class="question-card">
-          <div class="question-meta" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span id="questionLabel" style="color: var(--accent-2); font-size: 0.8rem; font-weight: 700; background: rgba(37, 99, 235, 0.15); border: 1px solid rgba(37, 99, 235, 0.3); padding: 2px 8px; border-radius: 6px;">Program 1</span>
-              <span id="examLabel" style="color: var(--muted); font-size: 0.8rem; font-weight: 600;">Demo Studio</span>
+        <!-- Attached Files & Datasets Panel -->
+        <div class="panel" style="padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-border);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-weight: 700; font-size: 0.9rem; color: var(--text);">Attached Files</span>
+              <span id="attachedFilesCountBadge" style="background: var(--bg-2); border: 1px solid var(--panel-border); font-size: 0.72rem; padding: 1px 6px; border-radius: 99px; font-weight: 700; color: var(--muted);">0</span>
             </div>
-            <button id="toggleEditQuestionBtn" type="button" class="demo-btn-sm" style="font-size: 0.75rem; padding: 3px 8px;">Edit Details</button>
+            <button id="addLocalFileBtn" type="button" class="btn-primary" style="padding: 5px 12px; font-size: 0.78rem; font-weight: 700; border-radius: 6px; cursor: pointer;">
+              + Add Files
+            </button>
+            <input id="demoAttachFileInput" type="file" multiple accept=".csv,.tsv,.json,.txt,.pdf,.png,.jpg,.jpeg,.zip" class="hidden" />
           </div>
 
-          <h3 id="questionTitle" style="font-size: 1.25rem; font-weight: 800; margin: 4px 0 10px; line-height: 1.3; color: var(--text);">Loading...</h3>
-          <div id="questionPrompt" style="color: var(--muted); line-height: 1.6; font-size: 0.92rem; white-space: pre-wrap;">Your question prompt will appear here.</div>
-          
-          <!-- Attached Files Chips -->
-          <div id="studentAttachments" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;"></div>
+          <p style="font-size: 0.76rem; color: var(--muted); margin: 0 0 12px 0; line-height: 1.4;">
+            Attach local CSV datasets, PDF question papers, or images for this program.
+          </p>
 
-          <!-- In-Place Question Editor Drawer (Toggleable) -->
-          <div id="questionEditDrawer" class="question-edit-drawer hidden">
-            <h4 style="margin: 0; font-size: 0.92rem; font-weight: 700; color: var(--text);">Edit Question Details</h4>
-            
-            <label>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--muted);">Problem Title</span>
-              <input id="demoQTitle" type="text" placeholder="e.g. Binary Search Tree" style="width: 100%; padding: 8px 12px; font-size: 0.88rem;" />
-            </label>
-
-            <label>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--muted);">Problem Description / Instructions</span>
-              <textarea id="demoQPrompt" rows="4" placeholder="Enter problem statement, input/output requirements, constraints..." style="width: 100%; min-height: 100px; padding: 8px 12px; font-size: 0.88rem; font-family: sans-serif;"></textarea>
-            </label>
-
-            <div>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px;">Attach Datasets or Reference Files</span>
-              <div class="dropzone-box" onclick="el('demoQFiles').click();">
-                <span style="font-size: 0.82rem; color: var(--muted);">Click to attach CSV, JSON, PDF, or Images</span>
-                <input id="demoQFiles" type="file" multiple class="hidden" />
-              </div>
-            </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
-              <button id="cancelEditQuestionBtn" type="button" class="demo-btn-sm">Cancel</button>
-              <button id="applyDemoQBtn" class="primary" type="button" style="padding: 6px 14px; font-size: 0.82rem;">Save Changes</button>
+          <!-- Files List Container -->
+          <div id="demoFilesList" style="display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto;">
+            <div id="noFilesPlaceholder" style="text-align: center; padding: 24px 12px; color: var(--muted); font-size: 0.8rem; border: 1.5px dashed var(--panel-border); border-radius: 8px;">
+              No files attached yet.<br>Click <strong>+ Add Files</strong> to upload CSV, PDF, or images.
             </div>
           </div>
         </div>
