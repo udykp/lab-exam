@@ -774,12 +774,13 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
   fs.mkdirSync(runDir, { recursive: true });
 
   try {
-    // Download non-image attachments (datasets like CSVs) to runDir so code can access them relatively
+    // Download data attachments (datasets like CSVs, JSON, TSV, TXT) silently to runDir so code can access them relatively
     if (attachments && attachments.length > 0) {
       for (const att of attachments) {
+        if (!att || !att.filename) continue;
         const lower = att.filename.toLowerCase();
-        const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp');
-        if (isImage) continue; // Skip images - they don't need to be read by scripts
+        const isDocOrImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp') || lower.endsWith('.pdf') || lower.endsWith('.doc') || lower.endsWith('.docx');
+        if (isDocOrImage) continue; // Skip docs and images - they are question references, not datasets
 
         try {
           if (att.isLocal && att.content) {
@@ -788,9 +789,7 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
             if (att.rawFilename && att.rawFilename !== att.filename) {
               fs.writeFileSync(path.join(runDir, att.rawFilename), fileBuf);
             }
-            sendOutput(event, `Loaded attached file: ${att.filename}\n`);
-          } else {
-            sendOutput(event, `Downloading dataset: ${att.filename}...\n`);
+          } else if (att.url) {
             let response = null;
             let downloadSuccess = false;
             for (let attempt = 1; attempt <= 3; attempt++) {
@@ -800,30 +799,25 @@ ipcMain.on('run-code', async (event, { code, language, attachments }) => {
                   downloadSuccess = true;
                   break;
                 }
-                console.warn(`[Runner] Download attempt ${attempt} failed with status: ${response.status}`);
               } catch (fetchErr) {
                 console.warn(`[Runner] Download attempt ${attempt} network error:`, fetchErr.message);
               }
               if (attempt < 3) {
-                sendOutput(event, `Retrying download of ${att.filename} (attempt ${attempt + 1}/3)...\n`);
-                await new Promise(r => setTimeout(r, 1000));
+                await new Promise(r => setTimeout(r, 800));
               }
             }
 
-            if (!downloadSuccess || !response) {
-              throw new Error(`Failed to download after 3 attempts.`);
+            if (downloadSuccess && response) {
+              const arrayBuffer = await response.arrayBuffer();
+              const buffer = Buffer.from(arrayBuffer);
+              fs.writeFileSync(path.join(runDir, att.filename), buffer);
+              if (att.rawFilename && att.rawFilename !== att.filename) {
+                fs.writeFileSync(path.join(runDir, att.rawFilename), buffer);
+              }
             }
-
-            const arrayBuffer = await response.arrayBuffer();
-            const buffer = Buffer.from(arrayBuffer);
-            fs.writeFileSync(path.join(runDir, att.filename), buffer);
-            if (att.rawFilename && att.rawFilename !== att.filename) {
-              fs.writeFileSync(path.join(runDir, att.rawFilename), buffer);
-            }
-            sendOutput(event, `Successfully loaded ${att.filename} locally.\n`);
           }
         } catch (err) {
-          sendOutput(event, `Warning: failed to load data file ${att.filename}: ${err.message}\n`, 'stderr');
+          console.warn(`[Runner] Failed to load data file ${att.filename}: ${err.message}`);
         }
       }
     }

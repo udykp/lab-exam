@@ -2443,16 +2443,20 @@ const submitCurrentSolution = async (btn) => {
   }
 };
 
-el('submitBtn').addEventListener('click', () => submitCurrentSolution(el('submitBtn')));
+if (el('submitBtn')) {
+  el('submitBtn').addEventListener('click', () => submitCurrentSolution(el('submitBtn')));
+}
 if (el('submitSqlBtn')) {
   el('submitSqlBtn').addEventListener('click', () => submitCurrentSolution(el('submitSqlBtn')));
 }
 
 // Helper that performs the actual exam shutdown — called from the inline confirm panel
 const doEndExam = async () => {
-  el('endExamBtn').disabled = true;
-  el('endExamBtn').textContent = 'Ending...';
-  el('endExamConfirm').classList.add('hidden');
+  if (el('endExamBtn')) {
+    el('endExamBtn').disabled = true;
+    el('endExamBtn').textContent = 'Ending...';
+  }
+  if (el('endExamConfirm')) el('endExamConfirm').classList.add('hidden');
 
   saveCurrentTabState();
 
@@ -2525,9 +2529,10 @@ const doEndExam = async () => {
     if (overlay && detailsEl) {
       detailsEl.textContent = 'Exam ended voluntarily. Your submission has been saved.';
       detailsEl.style.color = '#10b981';
-      overlay.querySelector('h2').textContent = 'Exam Ended';
-      overlay.querySelector('h2').style.color = '#10b981';
-      overlay.querySelector('p').textContent = 'Thank you. Your final code has been submitted to the server.';
+      const h2 = overlay.querySelector('h2');
+      if (h2) { h2.textContent = 'Exam Ended'; h2.style.color = '#10b981'; }
+      const p = overlay.querySelector('p');
+      if (p) p.textContent = 'Thank you. Your final code has been submitted to the server.';
       overlay.classList.remove('hidden');
     }
     const mainShell = document.querySelector('.shell');
@@ -2536,83 +2541,100 @@ const doEndExam = async () => {
 };
 
 // Step 1: clicking End Exam just reveals the inline confirmation panel — no popup, no focus loss
-el('endExamBtn').addEventListener('click', () => {
-  el('endExamConfirm').classList.remove('hidden');
-  el('endExamConfirm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-});
+if (el('endExamBtn')) {
+  el('endExamBtn').addEventListener('click', () => {
+    if (el('endExamConfirm')) {
+      el('endExamConfirm').classList.remove('hidden');
+      el('endExamConfirm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+}
 
 // Step 2a: Cancel — hide the panel, do nothing
-el('endExamCancelBtn').addEventListener('click', () => {
-  el('endExamConfirm').classList.add('hidden');
-});
+if (el('endExamCancelBtn')) {
+  el('endExamCancelBtn').addEventListener('click', () => {
+    if (el('endExamConfirm')) el('endExamConfirm').classList.add('hidden');
+  });
+}
 
 // Step 2b: Confirm — run shutdown
-el('endExamConfirmBtn').addEventListener('click', async () => {
-  await doEndExam();
-});
+if (el('endExamConfirmBtn')) {
+  el('endExamConfirmBtn').addEventListener('click', async () => {
+    await doEndExam();
+  });
+}
 
-el('runCodeBtn').addEventListener('click', () => {
-  const code = getEditorValue();
-  const term = el('terminalOutput');
-  const runBtn = el('runCodeBtn');
-  const lang = el('languageSelect') ? el('languageSelect').value : 'python';
+if (el('runCodeBtn')) {
+  el('runCodeBtn').addEventListener('click', () => {
+    const code = getEditorValue();
+    const term = el('terminalOutput');
+    const runBtn = el('runCodeBtn');
+    const lang = el('languageSelect') ? el('languageSelect').value : 'python';
 
-  // ── Stop running process ────────────────────────────────────────────────
-  if (state.runWs) {
-    if (window.electronAPI) {
-      window.electronAPI.stopCode();
+    // ── Stop running process ────────────────────────────────────────────────
+    if (state.runWs) {
+      if (window.electronAPI) {
+        window.electronAPI.stopCode();
+      }
+      state.runWs = null; // flag cleared; code-exit event will clean up UI
+      return;
     }
-    state.runWs = null; // flag cleared; code-exit event will clean up UI
-    return;
-  }
 
-  if (!window.electronAPI) {
-    term.style.color = '#f87171';
-    term.textContent = '[Error]: Code execution is only available in the desktop app.';
-    return;
-  }
+    if (!window.electronAPI) {
+      if (term) {
+        term.style.color = '#f87171';
+        term.textContent = '[Error]: Code execution is only available in the desktop app.';
+      }
+      return;
+    }
 
-  if (!code.trim()) {
-    term.style.color = '#f87171';
-    term.textContent = '[Error]: Please write some code first.';
-    return;
-  }
+    if (!code.trim()) {
+      if (term) {
+        term.style.color = '#f87171';
+        term.textContent = '[Error]: Please write some code first.';
+      }
+      return;
+    }
 
-  // ── Start run ──────────────────────────────────────────────────────────
-  saveDraftSnapshot();
-  syncActiveDraftToServer();
-  state.runWs = true; // use as "running" flag
+    // ── Start run ──────────────────────────────────────────────────────────
+    saveDraftSnapshot();
+    syncActiveDraftToServer();
+    state.runWs = true; // use as "running" flag
 
-  // Clear previous outputs/plots and reset badge
-  state.currentPlots = {};
-  state.activePlotFilename = null;
-  if (el('plotsSidebar')) {
-    el('plotsSidebar').innerHTML = `<div style="color: #a1a1aa; font-size: 0.8rem; text-align: center; margin-top: 20px; font-family: system-ui, sans-serif;">No plots</div>`;
-  }
-  if (el('plotsPlaceholder')) {
-    el('plotsPlaceholder').classList.remove('hidden');
-  }
-  if (el('plotsActiveDisplay')) {
-    el('plotsActiveDisplay').classList.add('hidden');
-  }
-  if (el('executionMetricsBadge')) {
-    el('executionMetricsBadge').classList.add('hidden');
-  }
-  const plotsBadge = el('plotsBadge');
-  if (plotsBadge) {
-    plotsBadge.textContent = '0';
-    plotsBadge.style.display = 'none';
-  }
+    // Clear previous outputs/plots and reset badge
+    state.currentPlots = {};
+    state.activePlotFilename = null;
+    if (el('plotsSidebar')) {
+      el('plotsSidebar').innerHTML = `<div style="color: #a1a1aa; font-size: 0.8rem; text-align: center; margin-top: 20px; font-family: system-ui, sans-serif;">No plots</div>`;
+    }
+    if (el('plotsPlaceholder')) {
+      el('plotsPlaceholder').classList.remove('hidden');
+    }
+    if (el('plotsActiveDisplay')) {
+      el('plotsActiveDisplay').classList.add('hidden');
+    }
+    if (el('executionMetricsBadge')) {
+      el('executionMetricsBadge').classList.add('hidden');
+    }
+    const plotsBadge = el('plotsBadge');
+    if (plotsBadge) {
+      plotsBadge.textContent = '0';
+      plotsBadge.style.display = 'none';
+    }
 
-  term.textContent = `Running ${lang.toUpperCase()} code...\n`;
-  term.style.color = '#a3e635';
-  runBtn.textContent = 'Stop';
-  runBtn.style.background = '#ef4444';
-  runBtn.style.color = '#ffffff';
-  runBtn.disabled = false;
+    if (term) {
+      term.textContent = '';
+      term.style.color = '#10b981';
+    }
+    if (runBtn) {
+      runBtn.textContent = 'Stop';
+      runBtn.style.background = '#ef4444';
+      runBtn.style.color = '#ffffff';
+      runBtn.disabled = false;
+    }
 
-  // Show stdin input row immediately so user can type as soon as program prompts
-  const inputEl  = el('terminalInput');
+    // Show stdin input row immediately so user can type as soon as program prompts
+    const inputEl  = el('terminalInput');
   if (inputEl) {
     inputEl.value = '';
     inputEl.focus();
@@ -2707,7 +2729,8 @@ el('runCodeBtn').addEventListener('click', () => {
   }) : [];
 
   window.electronAPI.runCode(code, lang, attachments);
-});
+  });
+}
 
 
 
@@ -2937,45 +2960,49 @@ const configureEnvironmentModes = () => {
 
 
 
-el('signOutBtn').addEventListener('click', async () => {
-  try {
-    if (state.role === 'admin') {
-      await api('/api/admin/auth/logout', { method: 'POST' });
-    } else if (state.role === 'faculty') {
-      await api('/api/auth/logout', { method: 'POST' });
+if (el('signOutBtn')) {
+  el('signOutBtn').addEventListener('click', async () => {
+    try {
+      if (state.role === 'admin') {
+        await api('/api/admin/auth/logout', { method: 'POST' });
+      } else if (state.role === 'faculty') {
+        await api('/api/auth/logout', { method: 'POST' });
+      }
+    } catch (_) {}
+
+    state.token = '';
+    state.role = window.electronAPI ? 'student' : 'faculty';
+    state.name = '';
+    state.rollNumber = '';
+    state.securityArmed = false;
+    localStorage.removeItem('securemlexam_token');
+    localStorage.removeItem('securemlexam_role');
+    localStorage.removeItem('securemlexam_name');
+    localStorage.removeItem('securemlexam_rollnumber');
+    localStorage.removeItem('securemlexam_exam_id');
+
+    if (state.ws) {
+      state.ws.close();
+      state.ws = null;
     }
-  } catch (_) {}
 
-  state.token = '';
-  state.role = window.electronAPI ? 'student' : 'faculty';
-  state.name = '';
-  state.rollNumber = '';
-  state.securityArmed = false;
-  localStorage.removeItem('securemlexam_token');
-  localStorage.removeItem('securemlexam_role');
-  localStorage.removeItem('securemlexam_name');
-  localStorage.removeItem('securemlexam_rollnumber');
-  localStorage.removeItem('securemlexam_exam_id');
+    configureEnvironmentModes();
+    renderToken();
+    updateGridLayout();
+    logEvent('Signed out.');
+  });
+}
 
-  if (state.ws) {
-    state.ws.close();
-    state.ws = null;
-  }
-
-  configureEnvironmentModes();
-  renderToken();
-  updateGridLayout();
-  logEvent('Signed out.');
-});
-
-el('violationExitBtn').addEventListener('click', () => {
-  if (window.electronAPI) {
-    window.electronAPI.unlockExamWindow();
-    window.electronAPI.exitApp();
-  } else {
-    window.location.reload();
-  }
-});
+if (el('violationExitBtn')) {
+  el('violationExitBtn').addEventListener('click', () => {
+    if (window.electronAPI) {
+      window.electronAPI.unlockExamWindow();
+      window.electronAPI.exitApp();
+    } else {
+      window.location.reload();
+    }
+  });
+}
 
 window.addEventListener('load', async () => {
   // If in Electron (student app), clear any persisted token so they always start at the login screen fresh.
