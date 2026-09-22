@@ -573,11 +573,10 @@ const getActiveTheme = () => localStorage.getItem('labexam_theme') || 'dark';
 const applyTheme = (theme) => {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('labexam_theme', theme);
-  const btn = el('themeToggleBtn');
-  if (btn) {
+  document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
     btn.innerHTML = theme === 'dark' ? '☀️ Light' : '🌙 Dark';
     btn.setAttribute('title', theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode');
-  }
+  });
   if (typeof monaco !== 'undefined' && monaco.editor) {
     monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs');
   }
@@ -591,10 +590,12 @@ const toggleTheme = () => {
 
 // Initialize theme on evaluation
 applyTheme(getActiveTheme());
-const themeToggleBtn = el('themeToggleBtn');
-if (themeToggleBtn) {
-  themeToggleBtn.addEventListener('click', toggleTheme);
-}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.theme-toggle-btn');
+  if (btn) {
+    toggleTheme();
+  }
+});
 
 // Initialize Monaco Editor
 if (typeof require !== 'undefined') {
@@ -1219,7 +1220,7 @@ const updateGridLayout = () => {
   const hero = document.querySelector('.hero');
   if (!state.token) {
     grid.className = 'grid two-col auth-only';
-    if (el('windowCloseBtn')) el('windowCloseBtn').classList.remove('hidden');
+    if (el('windowTopControls')) el('windowTopControls').classList.remove('hidden');
     if (shell) {
       shell.classList.remove('wide-shell');
       shell.classList.add('auth-view-shell');
@@ -1229,7 +1230,7 @@ const updateGridLayout = () => {
     if (workspaceHint) workspaceHint.textContent = 'Login as a student to load your assigned question.';
   } else {
     grid.className = 'grid two-col workspace-only';
-    if (el('windowCloseBtn')) el('windowCloseBtn').classList.add('hidden');
+    if (el('windowTopControls')) el('windowTopControls').classList.add('hidden');
     if (shell) {
       shell.classList.add('wide-shell');
       shell.classList.remove('auth-view-shell');
