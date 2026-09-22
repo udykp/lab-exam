@@ -212,16 +212,19 @@ type question struct {
 }
 
 type assignment struct {
-	ID            string `json:"id"`
-	ExamID        string `json:"exam_id,omitempty"`
-	PaperID       string `json:"paper_id,omitempty"`
-	StudentRollNo string `json:"student_roll_no"`
-	QuestionID    string `json:"question_id"`
-	QuestionText  string `json:"question_text"`
-	AssignedAt    string `json:"assigned_at"`
-	Response      string `json:"response,omitempty"`
-	SubmittedAt   string `json:"submitted_at,omitempty"`
-	AttemptID     string `json:"attempt_id,omitempty"`
+	ID            string   `json:"id"`
+	ExamID        string   `json:"exam_id,omitempty"`
+	PaperID       string   `json:"paper_id,omitempty"`
+	StudentRollNo string   `json:"student_roll_no"`
+	QuestionID    string   `json:"question_id"`
+	QuestionText  string   `json:"question_text"`
+	Number        int      `json:"number,omitempty"`
+	Marks         int      `json:"marks,omitempty"`
+	Attachments   []string `json:"attachments,omitempty"`
+	AssignedAt    string   `json:"assigned_at"`
+	Response      string   `json:"response,omitempty"`
+	SubmittedAt   string   `json:"submitted_at,omitempty"`
+	AttemptID     string   `json:"attempt_id,omitempty"`
 }
 
 type attempt struct {
@@ -2763,9 +2766,38 @@ func handleGetExamSubmissions(w http.ResponseWriter, client *pocketBaseClient, e
 	}
 	_ = client.listRecords("assignments", fmt.Sprintf(`exam_id = %q`, examID), &assignmentsRes)
 
-	assignMap := make(map[string][]assignment)
+	// Also fetch questions to enrich question text, marks, number, and attachments
+	var questionsRes struct {
+		Items []question `json:"items"`
+	}
+	_ = client.listRecords("questions", fmt.Sprintf(`exam_id = %q`, examID), &questionsRes)
+	qMap := make(map[string]question)
+	for _, q := range questionsRes.Items {
+		qMap[q.ID] = q
+	}
+
+	assignMapByRoll := make(map[string][]assignment)
+	assignMapByAttempt := make(map[string][]assignment)
 	for _, as := range assignmentsRes.Items {
-		assignMap[as.StudentRollNo] = append(assignMap[as.StudentRollNo], as)
+		if q, ok := qMap[as.QuestionID]; ok {
+			if as.QuestionText == "" {
+				as.QuestionText = q.Text
+			}
+			if as.Number == 0 {
+				as.Number = q.Number
+			}
+			if as.Marks == 0 {
+				as.Marks = q.Marks
+			}
+			if len(as.Attachments) == 0 {
+				as.Attachments = q.Attachments
+			}
+		}
+		rKey := strings.ToUpper(strings.TrimSpace(as.StudentRollNo))
+		assignMapByRoll[rKey] = append(assignMapByRoll[rKey], as)
+		if as.AttemptID != "" {
+			assignMapByAttempt[as.AttemptID] = append(assignMapByAttempt[as.AttemptID], as)
+		}
 	}
 
 	type submissionItem struct {
@@ -2797,7 +2829,12 @@ func handleGetExamSubmissions(w http.ResponseWriter, client *pocketBaseClient, e
 		var pap questionPaper
 		_ = client.getRecord("question_papers", att.PaperID, &pap)
 
-		studentAssigns := assignMap[att.StudentRollNo]
+		rKey := strings.ToUpper(strings.TrimSpace(att.StudentRollNo))
+		studentAssigns := assignMapByRoll[rKey]
+		if len(studentAssigns) == 0 && att.ID != "" {
+			studentAssigns = assignMapByAttempt[att.ID]
+		}
+
 		answered := 0
 		for _, as := range studentAssigns {
 			if strings.TrimSpace(as.Response) != "" {
@@ -2806,15 +2843,15 @@ func handleGetExamSubmissions(w http.ResponseWriter, client *pocketBaseClient, e
 		}
 
 		submissionList = append(submissionList, submissionItem{
-			StudentName:    name,
-			RollNo:         att.StudentRollNo,
-			Email:          email,
-			PaperTitle:     pap.Title,
-			AssignedAt:     att.AssignedAt,
-			Status:         att.Status,
-			AnsweredCount:  answered,
-			QuestionCount:  len(studentAssigns),
-			Assignments:    studentAssigns,
+			StudentName:   name,
+			RollNo:        att.StudentRollNo,
+			Email:         email,
+			PaperTitle:    pap.Title,
+			AssignedAt:    att.AssignedAt,
+			Status:        att.Status,
+			AnsweredCount: answered,
+			QuestionCount: len(studentAssigns),
+			Assignments:   studentAssigns,
 		})
 	}
 
