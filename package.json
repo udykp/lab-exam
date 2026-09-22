@@ -33,6 +33,7 @@
       "**/*",
       "bin/**/*",
       "web/**/*",
+      "!web-frontend/**/*",
       "!dist/**/*",
       "!node_modules/**/*"
     ]

@@ -34,3 +34,7 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Web frontend (standalone portal)
+web-frontend/
+

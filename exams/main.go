@@ -327,7 +327,11 @@ func main() {
 		}
 		handleSubmitResponse(w, r, client)
 	})
-	mux.Handle("/", http.FileServer(http.Dir("web")))
+	webDir := "web-frontend"
+	if _, err := os.Stat(webDir); os.IsNotExist(err) {
+		webDir = "web"
+	}
+	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 
 	fmt.Printf("server listening on http://localhost:%s\n", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
