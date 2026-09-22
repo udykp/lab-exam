@@ -31,8 +31,8 @@
 
   <div class="bg-shape bg-shape-a"></div>
   <div class="bg-shape bg-shape-b"></div>
-  <main class="shell">
-    <section class="hero">
+  <main class="shell auth-view-shell">
+    <section class="hero hidden">
       <div>
         <p class="eyebrow">Secure Exam Client</p>
         <h1>Secure Student Workspace</h1>
@@ -49,35 +49,36 @@
 
     <section id="mainGrid" class="grid two-col auth-only">
       <article class="panel auth-panel">
-        <div id="loginHeader" class="panel-head">
+        <div class="auth-brand-badge">
+          <img src="logo-dark.png" alt="SecureLab Logo" class="auth-card-logo-img" />
+        </div>
+
+        <div id="loginHeader" class="auth-header">
           <h2>Student Sign In</h2>
+          <p>Enter your Roll Number and Exam Access Code to begin.</p>
         </div>
 
         <form id="loginForm" class="stack">
           <input type="hidden" name="role" value="student" />
           <label>
             <span>Roll Number</span>
-            <input name="rollNumber" placeholder="e.g. 220101" required autocomplete="off" />
+            <input name="rollNumber" placeholder="" required autocomplete="off" />
           </label>
           <label>
             <span>Exam Code</span>
-            <input name="examId" placeholder="e.g. K7M2QX" required autocomplete="off" />
+            <input name="examId" placeholder="" required autocomplete="off" class="exam-code-input" />
           </label>
           <label style="display: none !important;">
             <span>Server Address</span>
             <input name="serverUrl" value="https://exams.crraoaimscs.ac.in" placeholder="https://exams.crraoaimscs.ac.in" />
           </label>
-          <div id="loginError" class="hidden" style="
-            background: rgba(220, 38, 38, 0.1);
-            border: 1px solid rgba(220, 38, 38, 0.4);
-            color: #f87171;
-            border-radius: 10px;
-            padding: 12px 16px;
-            font-size: 0.9rem;
-            line-height: 1.5;
-          "></div>
-          <button id="loginSubmitBtn" class="primary" type="submit">Sign In to Exam</button>
+          <div id="loginError" class="hidden auth-error-box"></div>
+          <button id="loginSubmitBtn" class="primary auth-submit-btn" type="submit">Sign In to Exam</button>
         </form>
+
+        <div class="auth-card-footer">
+          <span>C.R. Rao AIMSCS • Secure Examination Platform</span>
+        </div>
 
         <div id="debugActionsRow" class="actions-row hidden">
           <button id="connectWsBtn" class="secondary" type="button">Connect WebSocket</button>

@@ -1220,14 +1220,20 @@ const updateGridLayout = () => {
   if (!state.token) {
     grid.className = 'grid two-col auth-only';
     if (el('windowCloseBtn')) el('windowCloseBtn').classList.remove('hidden');
-    if (shell) shell.classList.remove('wide-shell');
-    if (hero) hero.classList.remove('hidden');
+    if (shell) {
+      shell.classList.remove('wide-shell');
+      shell.classList.add('auth-view-shell');
+    }
+    if (hero) hero.classList.add('hidden');
     if (workspaceTitle) workspaceTitle.textContent = 'Student Workspace';
     if (workspaceHint) workspaceHint.textContent = 'Login as a student to load your assigned question.';
   } else {
     grid.className = 'grid two-col workspace-only';
     if (el('windowCloseBtn')) el('windowCloseBtn').classList.add('hidden');
-    if (shell) shell.classList.add('wide-shell');
+    if (shell) {
+      shell.classList.add('wide-shell');
+      shell.classList.remove('auth-view-shell');
+    }
     if (hero) hero.classList.add('hidden');
   }
   renderAuthLayout();
