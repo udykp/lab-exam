@@ -1274,17 +1274,19 @@ const logEvent = (value) => {
 };
 
 const renderToken = () => {
-  tokenPreview.textContent = state.token ? `${state.role}: ${state.token.slice(0, 32)}...` : 'Not signed in';
+  if (tokenPreview) {
+    tokenPreview.textContent = state.token ? `${state.role}: ${state.token.slice(0, 32)}...` : 'Not signed in';
+  }
 };
 
 const loadStatus = async () => {
   try {
     await api('/health', { headers: {} });
-    serverStatus.textContent = 'Server online';
-    statusText.textContent = 'Connected to localhost:8080';
+    if (serverStatus) serverStatus.textContent = 'Server online';
+    if (statusText) statusText.textContent = 'Connected to localhost:8080';
   } catch (error) {
-    serverStatus.textContent = 'Server offline';
-    statusText.textContent = error.message;
+    if (serverStatus) serverStatus.textContent = 'Server offline';
+    if (statusText) statusText.textContent = error.message;
   }
 };
 
@@ -1491,9 +1493,9 @@ const loadTabState = (index) => {
   const q = state.questions[index];
   if (!q) return;
 
-  questionLabel.textContent = `Question ${q.number || (index + 1)}`;
-  questionTitle.textContent = q.title;
-  questionPrompt.textContent = q.prompt;
+  if (questionLabel) questionLabel.textContent = `Question ${q.number || (index + 1)}`;
+  if (questionTitle) questionTitle.textContent = q.title;
+  if (questionPrompt) questionPrompt.textContent = q.prompt;
   state.questionId = q.id;
 
   const attachDiv = el('studentAttachments');
@@ -1751,7 +1753,7 @@ const loadStudentExam = async () => {
       state.activeAttemptId = activeAtt.id;
       state.examId = activeAtt.exam_id;
       state.examCode = activeAtt.exam_code || enteredCode;
-      examLabel.textContent = activeAtt.exam_title ? `Exam: ${activeAtt.exam_title}` : `Assigned Lab Exam`;
+      if (examLabel) examLabel.textContent = activeAtt.exam_title ? `Exam: ${activeAtt.exam_title}` : `Assigned Lab Exam`;
       if (workspaceTitle) workspaceTitle.textContent = activeAtt.exam_title || 'Assigned Lab Exam';
       if (workspaceHint) workspaceHint.textContent = `Candidate: ${state.name || 'Student'} • Roll No: ${state.rollNumber || ''}`;
 
