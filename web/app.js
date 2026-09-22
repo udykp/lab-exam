@@ -2371,7 +2371,6 @@ loginForm.addEventListener('submit', async (event) => {
 
   try {
     const rollNumber = (formData.get('rollNumber') || '').trim();
-    const name = (formData.get('name') || '').trim();
 
     if (!rollNumber) {
       throw new Error('Please enter your Roll Number.');
@@ -2427,10 +2426,12 @@ loginForm.addEventListener('submit', async (event) => {
       }
     }
 
+    const studentResolvedName = (resData.student && resData.student.name) || resData.student_name || `Student (${rollNumber})`;
+
     const data = {
       token: 'student_session',
       role: 'student',
-      name: name || (resData.student && resData.student.name) || 'Student',
+      name: studentResolvedName,
       rollNumber: rollNumber
     };
 
