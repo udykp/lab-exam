@@ -1027,10 +1027,11 @@ func handleFacultyPaperResource(w http.ResponseWriter, r *http.Request, client *
 		return
 	}
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/faculty/papers/"), "/"), "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] != "questions" || r.Method != http.MethodPost {
+	if len(parts) == 0 || parts[0] == "" {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "route not found"})
 		return
 	}
+
 	var paper questionPaper
 	if err := facultyClient.getRecord("question_papers", parts[0], &paper); err != nil {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "question paper not found"})
@@ -1039,6 +1040,62 @@ func handleFacultyPaperResource(w http.ResponseWriter, r *http.Request, client *
 	var examRecord exam
 	if err := facultyClient.getRecord("exams", paper.ExamID, &examRecord); err != nil || examRecord.FacultyID != current.ID {
 		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "question paper not found"})
+		return
+	}
+
+	// 1. Single paper operations: DELETE or PUT /api/faculty/papers/{paperId}
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodDelete:
+			var existingPapers struct {
+				Items []questionPaper `json:"items"`
+			}
+			_ = facultyClient.listRecords("question_papers", fmt.Sprintf(`exam_id = %q`, examRecord.ID), &existingPapers)
+			if len(existingPapers.Items) <= 1 {
+				writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "cannot delete the only paper set in an exam"})
+				return
+			}
+
+			// Delete associated questions
+			var questions struct {
+				Items []question `json:"items"`
+			}
+			_ = facultyClient.listRecords("questions", fmt.Sprintf(`paper_id = %q`, paper.ID), &questions)
+			for _, q := range questions.Items {
+				_ = facultyClient.deleteRecord("questions", q.ID)
+			}
+
+			if err := facultyClient.deleteRecord("question_papers", paper.ID); err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: "failed to delete paper set: " + err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "paper set deleted"})
+			return
+
+		case http.MethodPut:
+			var req struct {
+				Title string `json:"title"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Title) == "" {
+				writeJSON(w, http.StatusBadRequest, apiResponse{Success: false, Message: "title is required"})
+				return
+			}
+			if err := facultyClient.updateRecord("question_papers", paper.ID, map[string]interface{}{"title": strings.TrimSpace(req.Title)}, nil); err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResponse{Success: false, Message: err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, apiResponse{Success: true, Message: "paper set updated"})
+			return
+
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, apiResponse{Success: false, Message: "method not allowed"})
+			return
+		}
+	}
+
+	// 2. Sub-resources: /api/faculty/papers/{paperId}/questions
+	if len(parts) != 2 || parts[1] != "questions" || r.Method != http.MethodPost {
+		writeJSON(w, http.StatusNotFound, apiResponse{Success: false, Message: "route not found"})
 		return
 	}
 
