@@ -647,24 +647,22 @@ const loadTabState = (index) => {
     btn.classList.toggle('active', idx === index);
   });
 };
-};
 
-function createQuestionFromPreset(presetKey) {
-  const preset = PRESETS[presetKey];
+function createNewProgram(title = null, lang = 'python') {
   const nextNum = state.questions.length + 1;
   const newQ = {
     id: `demo-q-${Date.now()}`,
     number: nextNum,
-    title: preset ? preset.title : `Program ${nextNum}`,
-    prompt: preset ? preset.prompt : `Write your instructions here...`,
-    language: preset ? preset.language : 'python',
-    localFiles: preset && preset.files ? [...preset.files] : []
+    title: title || `Program ${nextNum}`,
+    prompt: '',
+    language: lang,
+    localFiles: []
   };
 
   saveCurrentTabState();
   state.questions.push(newQ);
   state.drafts[newQ.id] = {
-    code: preset ? preset.code : (BOILERPLATES[newQ.language] || ''),
+    code: BOILERPLATES[newQ.language] || '',
     language: newQ.language,
     terminal: 'Terminal ready. Write code and click Run Code.',
     terminalColor: '#10b981',
@@ -678,17 +676,13 @@ function createQuestionFromPreset(presetKey) {
 // Render program tab bar
 const renderTabs = () => {
   const tabsContainer = el('studentTabs');
-  const launcher = el('presetLauncherWrapper');
   const splitContainer = el('workspaceSplitContainer');
 
   if (state.questions.length === 0) {
-    if (tabsContainer) tabsContainer.innerHTML = '';
-    if (launcher) launcher.classList.remove('hidden');
-    if (splitContainer) splitContainer.classList.add('hidden');
+    createNewProgram('Program 1', 'python');
     return;
   }
 
-  if (launcher) launcher.classList.add('hidden');
   if (splitContainer) splitContainer.classList.remove('hidden');
   if (!tabsContainer) return;
 
@@ -707,46 +701,48 @@ const renderTabs = () => {
     label.textContent = q.title || `Program ${idx + 1}`;
     btn.appendChild(label);
 
-    const closeBtn = document.createElement('span');
-    closeBtn.textContent = '✕';
-    closeBtn.style.cursor = 'pointer';
-    closeBtn.style.fontSize = '0.75rem';
-    closeBtn.style.opacity = '0.6';
-    closeBtn.style.padding = '2px 4px';
-    closeBtn.style.borderRadius = '4px';
-    closeBtn.style.transition = 'all 0.2s';
-    closeBtn.addEventListener('mouseenter', () => {
-      closeBtn.style.opacity = '1';
-      closeBtn.style.background = 'rgba(239, 68, 68, 0.2)';
-      closeBtn.style.color = '#ef4444';
-    });
-    closeBtn.addEventListener('mouseleave', () => {
+    if (state.questions.length > 1) {
+      const closeBtn = document.createElement('span');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cursor = 'pointer';
+      closeBtn.style.fontSize = '0.75rem';
       closeBtn.style.opacity = '0.6';
-      closeBtn.style.background = 'transparent';
-      closeBtn.style.color = 'inherit';
-    });
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+      closeBtn.style.padding = '2px 4px';
+      closeBtn.style.borderRadius = '4px';
+      closeBtn.style.transition = 'all 0.2s';
+      closeBtn.addEventListener('mouseenter', () => {
+        closeBtn.style.opacity = '1';
+        closeBtn.style.background = 'rgba(239, 68, 68, 0.2)';
+        closeBtn.style.color = '#ef4444';
+      });
+      closeBtn.addEventListener('mouseleave', () => {
+        closeBtn.style.opacity = '0.6';
+        closeBtn.style.background = 'transparent';
+        closeBtn.style.color = 'inherit';
+      });
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
 
-      if (!confirm(`Are you sure you want to close ${q.title || `Program ${idx + 1}`}? All draft code for this program will be lost.`)) {
-        return;
-      }
+        if (!confirm(`Are you sure you want to close ${q.title || `Program ${idx + 1}`}? All draft code for this program will be lost.`)) {
+          return;
+        }
 
-      state.questions.splice(idx, 1);
-      delete state.drafts[q.id];
+        state.questions.splice(idx, 1);
+        delete state.drafts[q.id];
 
-      if (state.activeQuestionIndex === idx) {
-        state.activeQuestionIndex = Math.max(0, idx - 1);
-      } else if (state.activeQuestionIndex > idx) {
-        state.activeQuestionIndex--;
-      }
+        if (state.activeQuestionIndex === idx) {
+          state.activeQuestionIndex = Math.max(0, idx - 1);
+        } else if (state.activeQuestionIndex > idx) {
+          state.activeQuestionIndex--;
+        }
 
-      renderTabs();
-      if (state.questions.length > 0) {
-        loadTabState(state.activeQuestionIndex);
-      }
-    });
-    btn.appendChild(closeBtn);
+        renderTabs();
+        if (state.questions.length > 0) {
+          loadTabState(state.activeQuestionIndex);
+        }
+      });
+      btn.appendChild(closeBtn);
+    }
 
     btn.addEventListener('click', (e) => {
       if (e.target.textContent === '✕') return;
@@ -782,7 +778,7 @@ const renderTabs = () => {
       addBtn.style.borderColor = 'var(--panel-border)';
     });
     addBtn.addEventListener('click', () => {
-      createQuestionFromPreset('python_basic');
+      createNewProgram();
     });
     tabsContainer.appendChild(addBtn);
   }
@@ -790,15 +786,17 @@ const renderTabs = () => {
 
 // Lightbox image viewer controllers
 const openImageLightbox = (src) => {
-  el('lightboxImage').src = src;
+  if (el('lightboxImage')) el('lightboxImage').src = src;
   if (el('lightboxDownloadBtn')) el('lightboxDownloadBtn').href = src;
-  el('imageLightboxModal').classList.remove('hidden');
+  if (el('imageLightboxModal')) el('imageLightboxModal').classList.remove('hidden');
 };
 
-el('closeLightboxBtn').addEventListener('click', () => {
-  el('imageLightboxModal').classList.add('hidden');
-  el('lightboxImage').src = '';
-});
+if (el('closeLightboxBtn')) {
+  el('closeLightboxBtn').addEventListener('click', () => {
+    if (el('imageLightboxModal')) el('imageLightboxModal').classList.add('hidden');
+    if (el('lightboxImage')) el('lightboxImage').src = '';
+  });
+}
 
 // PDF Viewer Modal Controller
 let pdfModalZoomScale = 1.0;
@@ -1788,291 +1786,228 @@ if (languageSelect) {
   }
 
 // Clear terminal output
-el('clearTerminalBtn').addEventListener('click', () => {
-  el('terminalOutput').textContent = '';
-});
+if (el('clearTerminalBtn')) {
+  el('clearTerminalBtn').addEventListener('click', () => {
+    if (el('terminalOutput')) el('terminalOutput').textContent = '';
+  });
+}
 
 // Stdin input piping
-el('terminalInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    const val = el('terminalInput').value.trim();
-    if (!val) return;
-    
-    if (state.runWs && window.electronAPI) {
-      el('terminalOutput').textContent += val + '\n';
-      el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-      window.electronAPI.sendStdin(val);
-      el('terminalInput').value = '';
-    } else {
-      // No program running - treat as virtual env pip command
-      el('terminalOutput').textContent += `\n$ ${val}\n`;
-      el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-      el('terminalInput').value = '';
-
-      const match = val.match(/^(python3\s+-m\s+)?pip(3)?\s+install\s+(.+)$/i);
-      if (match && window.electronAPI) {
-        const rawPackages = match[3];
-        const packages = rawPackages.split(/\s+/).filter(p => p.trim() && !p.startsWith('-'));
-        if (packages.length > 0) {
-          el('terminalInput').disabled = true;
-          el('terminalInput').placeholder = 'Installing package(s)... Please wait...';
-          
-          window.electronAPI.onCodeOutput((data) => {
-            el('terminalOutput').textContent += data.data;
-            el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-          });
-
-          window.electronAPI.onPipExit((data) => {
-            el('terminalInput').disabled = false;
-            el('terminalInput').placeholder = 'Type input here and press Enter...';
-            el('terminalInput').focus();
-            window.electronAPI.removePipListeners();
-            window.electronAPI.removeCodeListeners();
-          });
-          
-          window.electronAPI.runPipInstall(packages);
-        } else {
-          el('terminalOutput').textContent += `[System Error]: Please specify at least one package name.\n`;
-        }
+if (el('terminalInput')) {
+  el('terminalInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const val = el('terminalInput').value.trim();
+      if (!val) return;
+      
+      if (state.runWs && window.electronAPI) {
+        el('terminalOutput').textContent += val + '\n';
+        if (el('terminalOutputContainer')) el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+        window.electronAPI.sendStdin(val);
+        el('terminalInput').value = '';
       } else {
-        el('terminalOutput').textContent += `[System Error]: Only 'pip install <package>' commands are allowed for environment setup.\n`;
+        // No program running - treat as virtual env pip command
+        if (el('terminalOutput')) el('terminalOutput').textContent += `\n$ ${val}\n`;
+        if (el('terminalOutputContainer')) el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+        el('terminalInput').value = '';
+
+        const match = val.match(/^(python3\s+-m\s+)?pip(3)?\s+install\s+(.+)$/i);
+        if (match && window.electronAPI) {
+          const rawPackages = match[3];
+          const packages = rawPackages.split(/\s+/).filter(p => p.trim() && !p.startsWith('-'));
+          if (packages.length > 0) {
+            el('terminalInput').disabled = true;
+            el('terminalInput').placeholder = 'Installing package(s)... Please wait...';
+            
+            window.electronAPI.onCodeOutput((data) => {
+              if (el('terminalOutput')) el('terminalOutput').textContent += data.data;
+              if (el('terminalOutputContainer')) el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+            });
+
+            window.electronAPI.onPipExit((data) => {
+              if (el('terminalInput')) {
+                el('terminalInput').disabled = false;
+                el('terminalInput').placeholder = 'Type input here and press Enter...';
+                el('terminalInput').focus();
+              }
+              window.electronAPI.removePipListeners();
+              window.electronAPI.removeCodeListeners();
+            });
+            
+            window.electronAPI.runPipInstall(packages);
+          } else {
+            if (el('terminalOutput')) el('terminalOutput').textContent += `[System Error]: Please specify at least one package name.\n`;
+          }
+        } else {
+          if (el('terminalOutput')) el('terminalOutput').textContent += `[System Error]: Only 'pip install <package>' commands are allowed for environment setup.\n`;
+        }
+        if (el('terminalOutputContainer')) el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
       }
-      el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
     }
-  }
-});
-
-// Apply changes in Demo Question Builder
-el('applyDemoQBtn').addEventListener('click', async () => {
-  const btn = el('applyDemoQBtn');
-  const originalText = btn.textContent;
-  const originalBg = btn.style.background;
-  const originalColor = btn.style.color;
-
-  const q = state.questions[state.activeQuestionIndex];
-  if (!q) return;
-
-  const newTitle = el('demoQTitle').value.trim();
-  const newPrompt = el('demoQPrompt').value.trim();
-
-  if (!newTitle) {
-    btn.disabled = true;
-    btn.textContent = '✖ Title Required';
-    btn.style.background = 'linear-gradient(135deg, #dc2626, #b91c1c)';
-    btn.style.color = '#ffffff';
-    setTimeout(() => {
-      btn.textContent = originalText;
-      btn.style.background = originalBg;
-      btn.style.color = originalColor;
-      btn.disabled = false;
-    }, 2500);
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Applying...';
-
-  q.title = newTitle;
-  q.prompt = newPrompt;
-
-  const fileInput = el('demoQFiles');
-  if (fileInput && fileInput.files.length > 0) {
-    const localFiles = [];
-    const readPromises = Array.from(fileInput.files).map(file => {
-      return new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const base64Data = e.target.result.split(',')[1];
-          localFiles.push({
-            filename: file.name,
-            content: base64Data,
-            dataUrl: e.target.result
-          });
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      });
-    });
-    await Promise.all(readPromises);
-    q.localFiles = localFiles;
-  }
-
-  loadTabState(state.activeQuestionIndex);
-  
-  btn.textContent = 'Question Updated';
-  btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-  btn.style.color = '#ffffff';
-  setTimeout(() => {
-    btn.textContent = originalText;
-    btn.style.background = originalBg;
-    btn.style.color = originalColor;
-    btn.disabled = false;
-  }, 2500);
-});
+  });
+}
 
 // Run Code logic
-el('runCodeBtn').addEventListener('click', () => {
-  const code = getEditorValue();
-  const term = el('terminalOutput');
-  const runBtn = el('runCodeBtn');
-  const lang = el('languageSelect').value;
+if (el('runCodeBtn')) {
+  el('runCodeBtn').addEventListener('click', () => {
+    const code = getEditorValue();
+    const term = el('terminalOutput');
+    const runBtn = el('runCodeBtn');
+    const lang = el('languageSelect') ? el('languageSelect').value : 'python';
 
-  if (state.runWs) {
-    if (window.electronAPI) {
-      window.electronAPI.stopCode();
-    }
-    state.runWs = null;
-    return;
-  }
-
-  if (!window.electronAPI) {
-    term.style.color = '#f87171';
-    term.textContent = '[Error]: Code execution is only available in the desktop app.';
-    return;
-  }
-
-  if (!code.trim()) {
-    term.style.color = '#f87171';
-    term.textContent = '[Error]: Please write some code first.';
-    return;
-  }
-
-  state.runWs = true;
-
-  // Clear previous outputs/plots and reset badge
-  state.currentPlots = {};
-  state.activePlotFilename = null;
-  if (el('plotsSidebar')) {
-    el('plotsSidebar').innerHTML = `<div style="color: #a1a1aa; font-size: 0.8rem; text-align: center; margin-top: 20px; font-family: system-ui, sans-serif;">No plots</div>`;
-  }
-  if (el('plotsPlaceholder')) {
-    el('plotsPlaceholder').classList.remove('hidden');
-  }
-  if (el('plotsActiveDisplay')) {
-    el('plotsActiveDisplay').classList.add('hidden');
-  }
-  if (el('executionMetricsBadge')) {
-    el('executionMetricsBadge').classList.add('hidden');
-  }
-  const plotsBadge = el('plotsBadge');
-  if (plotsBadge) {
-    plotsBadge.textContent = '0';
-    plotsBadge.style.display = 'none';
-  }
-
-  term.textContent = `Running ${lang.toUpperCase()} code...\n`;
-  term.style.color = '#a3e635';
-  runBtn.textContent = 'Stop';
-  runBtn.style.background = '#ef4444';
-  runBtn.style.color = '#ffffff';
-
-  el('terminalInput').value = '';
-  el('terminalInput').focus();
-
-  const cleanupRunState = () => {
-    runBtn.disabled = false;
-    runBtn.textContent = 'Run Code';
-    runBtn.style.removeProperty('background');
-    runBtn.style.removeProperty('color');
-    state.runWs = null;
-    window.electronAPI.removeCodeListeners();
-  };
-
-  window.electronAPI.removeCodeListeners();
-
-  window.electronAPI.onCodeOutput((data) => {
-    term.textContent += data.data;
-    el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-    if (data.stream === 'stderr') {
-      term.style.color = '#f87171';
-    }
-  });
-
-  window.electronAPI.onCodeExit((data) => {
-    if (data.error) {
-      term.style.color = '#f87171';
-      term.textContent += '\n' + data.error;
-    } else if (data.exitCode === 0) {
-      term.style.color = '#10b981';
-      if (!term.textContent.trim()) {
-        term.textContent = 'Program finished with no output.';
+    if (state.runWs) {
+      if (window.electronAPI) {
+        window.electronAPI.stopCode();
       }
-    } else if (data.exitCode === -1) {
-      term.style.color = '#f87171';
-      term.textContent += '\n[Stopped by user]';
-    } else {
-      if (!term.style.color || term.style.color === 'rgb(163, 230, 53)') {
+      state.runWs = null;
+      return;
+    }
+
+    if (!window.electronAPI) {
+      if (term) {
         term.style.color = '#f87171';
+        term.textContent = '[Error]: Code execution is only available in the desktop app.';
       }
+      return;
     }
 
-    if (data.generatedFiles && data.generatedFiles.length > 0) {
-      data.generatedFiles.forEach(file => {
-        addOrUpdatePlot(file);
-      });
-
-      // Update badge if Plots tab is not active
-      const tabPlotsBtn = el('tabPlotsBtn');
-      const plotsBadge = el('plotsBadge');
-      if (tabPlotsBtn && !tabPlotsBtn.classList.contains('active') && plotsBadge) {
-        plotsBadge.textContent = data.generatedFiles.length;
-        plotsBadge.style.display = 'inline-block';
+    if (!code.trim()) {
+      if (term) {
+        term.style.color = '#f87171';
+        term.textContent = '[Error]: Please write some code first.';
       }
+      return;
     }
 
+    state.runWs = true;
+
+    // Clear previous outputs/plots and reset badge
+    state.currentPlots = {};
+    state.activePlotFilename = null;
+    if (el('plotsSidebar')) {
+      el('plotsSidebar').innerHTML = `<div style="color: #a1a1aa; font-size: 0.8rem; text-align: center; margin-top: 20px; font-family: system-ui, sans-serif;">No plots</div>`;
+    }
+    if (el('plotsPlaceholder')) {
+      el('plotsPlaceholder').classList.remove('hidden');
+    }
+    if (el('plotsActiveDisplay')) {
+      el('plotsActiveDisplay').classList.add('hidden');
+    }
     if (el('executionMetricsBadge')) {
-      const timeSec = ((data.executionTimeMs || 0) / 1000).toFixed(2);
-      const memStr = data.peakMemoryMb ? ` | 💾 ${data.peakMemoryMb} MB` : '';
-      el('executionMetricsBadge').textContent = `⏱️ ${timeSec}s${memStr}`;
-      el('executionMetricsBadge').style.color = data.exitCode === 0 ? '#15803d' : '#b91c1c';
-      el('executionMetricsBadge').style.background = data.exitCode === 0 ? '#dcfce7' : '#fee2e2';
-      el('executionMetricsBadge').style.borderColor = data.exitCode === 0 ? '#bbf7d0' : '#fecaca';
-      el('executionMetricsBadge').classList.remove('hidden');
+      el('executionMetricsBadge').classList.add('hidden');
+    }
+    const plotsBadge = el('plotsBadge');
+    if (plotsBadge) {
+      plotsBadge.textContent = '0';
+      plotsBadge.style.display = 'none';
     }
 
-    el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-    cleanupRunState();
+    if (term) {
+      term.textContent = `Running ${lang.toUpperCase()} code...\n`;
+      term.style.color = '#a3e635';
+    }
+    if (runBtn) {
+      runBtn.textContent = 'Stop';
+      runBtn.style.background = '#ef4444';
+      runBtn.style.color = '#ffffff';
+    }
+
+    if (el('terminalInput')) {
+      el('terminalInput').value = '';
+      el('terminalInput').focus();
+    }
+
+    const cleanupRunState = () => {
+      if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.textContent = 'Run Code';
+        runBtn.style.removeProperty('background');
+        runBtn.style.removeProperty('color');
+      }
+      state.runWs = null;
+      window.electronAPI.removeCodeListeners();
+    };
+
+    window.electronAPI.removeCodeListeners();
+
+    window.electronAPI.onCodeOutput((data) => {
+      if (term) {
+        term.textContent += data.data;
+        if (data.stream === 'stderr') {
+          term.style.color = '#f87171';
+        }
+      }
+      if (el('terminalOutputContainer')) {
+        el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+      }
+    });
+
+    window.electronAPI.onCodeExit((data) => {
+      if (term) {
+        if (data.error) {
+          term.style.color = '#f87171';
+          term.textContent += '\n' + data.error;
+        } else if (data.exitCode === 0) {
+          term.style.color = '#10b981';
+          if (!term.textContent.trim()) {
+            term.textContent = 'Program finished with no output.';
+          }
+        } else if (data.exitCode === -1) {
+          term.style.color = '#f87171';
+          term.textContent += '\n[Stopped by user]';
+        } else {
+          if (!term.style.color || term.style.color === 'rgb(163, 230, 53)') {
+            term.style.color = '#f87171';
+          }
+        }
+      }
+
+      if (data.generatedFiles && data.generatedFiles.length > 0) {
+        data.generatedFiles.forEach(file => {
+          addOrUpdatePlot(file);
+        });
+
+        // Update badge if Plots tab is not active
+        const tabPlotsBtn = el('tabPlotsBtn');
+        const plotsBadge = el('plotsBadge');
+        if (tabPlotsBtn && !tabPlotsBtn.classList.contains('active') && plotsBadge) {
+          plotsBadge.textContent = data.generatedFiles.length;
+          plotsBadge.style.display = 'inline-block';
+        }
+      }
+
+      if (el('executionMetricsBadge')) {
+        const timeSec = ((data.executionTimeMs || 0) / 1000).toFixed(2);
+        const memStr = data.peakMemoryMb ? ` | 💾 ${data.peakMemoryMb} MB` : '';
+        el('executionMetricsBadge').textContent = `⏱️ ${timeSec}s${memStr}`;
+        el('executionMetricsBadge').style.color = data.exitCode === 0 ? '#15803d' : '#b91c1c';
+        el('executionMetricsBadge').style.background = data.exitCode === 0 ? '#dcfce7' : '#fee2e2';
+        el('executionMetricsBadge').style.borderColor = data.exitCode === 0 ? '#bbf7d0' : '#fecaca';
+        el('executionMetricsBadge').classList.remove('hidden');
+      }
+
+      if (el('terminalOutputContainer')) {
+        el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
+      }
+      cleanupRunState();
+    });
+
+    const q = state.questions[state.activeQuestionIndex];
+    let attachments = [];
+    if (q && q.localFiles) {
+      attachments = q.localFiles.map(file => ({
+        filename: file.filename,
+        content: file.content,
+        isLocal: true
+      }));
+    }
+
+    window.electronAPI.runCode(code, lang, attachments);
   });
-
-  const q = state.questions[state.activeQuestionIndex];
-  let attachments = [];
-  if (q && q.localFiles) {
-    attachments = q.localFiles.map(file => ({
-      filename: file.filename,
-      content: file.content,
-      isLocal: true
-    }));
-  }
-
-  window.electronAPI.runCode(code, lang, attachments);
-});
-
-// Submit Solution (local feedback, no server request)
-const submitCurrentSolution = (btn) => {
-  const originalText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Submitting...';
-
-  setTimeout(() => {
-    btn.textContent = 'Submitted successfully';
-    btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-    btn.style.color = '#ffffff';
-    setTimeout(() => {
-      btn.textContent = originalText;
-      btn.style.background = '';
-      btn.style.color = '';
-      btn.disabled = false;
-    }, 3000);
-  }, 1000);
-};
-
-el('submitBtn').addEventListener('click', () => submitCurrentSolution(el('submitBtn')));
-if (el('submitSqlBtn')) {
-  el('submitSqlBtn').addEventListener('click', () => submitCurrentSolution(el('submitSqlBtn')));
 }
 
 // Save locally
 const saveLocalSolution = async (btn) => {
+  if (!btn) return;
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Saving...';
@@ -2128,7 +2063,9 @@ const saveLocalSolution = async (btn) => {
   }
 };
 
-el('saveLocalBtn').addEventListener('click', () => saveLocalSolution(el('saveLocalBtn')));
+if (el('saveLocalBtn')) {
+  el('saveLocalBtn').addEventListener('click', () => saveLocalSolution(el('saveLocalBtn')));
+}
 if (el('saveLocalSqlBtn')) {
   el('saveLocalSqlBtn').addEventListener('click', () => saveLocalSolution(el('saveLocalSqlBtn')));
 }
@@ -2153,294 +2090,119 @@ if (el('resetSqlDbBtn')) {
   });
 }
 
-// Toggle Edit Question Drawer
-if (el('toggleEditQuestionBtn')) {
-  el('toggleEditQuestionBtn').addEventListener('click', () => {
-    const drawer = el('questionEditDrawer');
-    if (!drawer) return;
-    const isHidden = drawer.classList.contains('hidden');
-    if (isHidden) {
-      const q = state.questions[state.activeQuestionIndex];
-      if (q) {
-        if (el('demoQTitle')) el('demoQTitle').value = q.title || '';
-        if (el('demoQPrompt')) el('demoQPrompt').value = q.prompt || '';
-      }
-      drawer.classList.remove('hidden');
-      el('toggleEditQuestionBtn').textContent = 'Close Editor';
-    } else {
-      drawer.classList.add('hidden');
-      el('toggleEditQuestionBtn').textContent = 'Edit Details';
-    }
-  });
-}
-
-if (el('cancelEditQuestionBtn')) {
-  el('cancelEditQuestionBtn').addEventListener('click', () => {
-    if (el('questionEditDrawer')) el('questionEditDrawer').classList.add('hidden');
-    if (el('toggleEditQuestionBtn')) el('toggleEditQuestionBtn').textContent = 'Edit Details';
-  });
-}
-
-// Apply changes in In-Place Question Editor
-if (el('applyDemoQBtn')) {
-  el('applyDemoQBtn').addEventListener('click', async () => {
-    const btn = el('applyDemoQBtn');
-    const originalText = btn.textContent;
-
-    const q = state.questions[state.activeQuestionIndex];
-    if (!q) return;
-
-    const newTitle = el('demoQTitle') ? el('demoQTitle').value.trim() : '';
-    const newPrompt = el('demoQPrompt') ? el('demoQPrompt').value.trim() : '';
-
-    if (!newTitle) {
-      btn.disabled = true;
-      btn.textContent = 'Title Required';
-      btn.style.background = '#dc2626';
-      btn.style.color = '#ffffff';
-      setTimeout(() => {
-        btn.textContent = originalText;
-        btn.style.background = '';
-        btn.style.color = '';
-        btn.disabled = false;
-      }, 2000);
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = 'Applying...';
-
-    q.title = newTitle;
-    q.prompt = newPrompt;
-
-    const fileInput = el('demoQFiles');
-    if (fileInput && fileInput.files.length > 0) {
-      const localFiles = [...(q.localFiles || [])];
-      const readPromises = Array.from(fileInput.files).map(file => {
-        return new Promise(resolve => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const base64Data = e.target.result.split(',')[1];
-            localFiles.push({
-              filename: file.name,
-              content: base64Data,
-              dataUrl: e.target.result
-            });
-            resolve();
-          };
-          reader.readAsDataURL(file);
-        });
-      });
-      await Promise.all(readPromises);
-      q.localFiles = localFiles;
-      fileInput.value = '';
-    }
-
-    loadTabState(state.activeQuestionIndex);
-    renderTabs();
-
-    btn.textContent = 'Saved';
-    btn.style.background = '#10b981';
-    btn.style.color = '#ffffff';
-    setTimeout(() => {
-      btn.textContent = originalText;
-      btn.style.background = '';
-      btn.style.color = '';
-      btn.disabled = false;
-      if (el('questionEditDrawer')) el('questionEditDrawer').classList.add('hidden');
-      if (el('toggleEditQuestionBtn')) el('toggleEditQuestionBtn').textContent = 'Edit Details';
-    }, 1200);
-  });
-}
-
-// Preset Launcher Cards
-document.querySelectorAll('.preset-card').forEach(card => {
-  card.addEventListener('click', () => {
-    const presetKey = card.getAttribute('data-preset');
-    if (presetKey === 'custom_blank') {
-      const nextNum = state.questions.length + 1;
-      const newQ = {
-        id: `demo-q-${Date.now()}`,
-        number: nextNum,
-        title: `Program ${nextNum}`,
-        prompt: `Write your instructions here...`,
-        language: 'python',
-        localFiles: []
-      };
-      saveCurrentTabState();
-      state.questions.push(newQ);
-      state.drafts[newQ.id] = {
-        code: BOILERPLATES.python,
-        language: 'python',
-        terminal: 'Terminal ready. Write code and click Run Code.',
-        terminalColor: '#10b981',
-      };
-      state.activeQuestionIndex = state.questions.length - 1;
-      renderTabs();
-      loadTabState(state.activeQuestionIndex);
-    } else if (PRESETS[presetKey]) {
-      createQuestionFromPreset(presetKey);
-    }
-  });
-});
-
-// Quick Preset Select in Top Navbar
-if (el('demoQuickPresetSelect')) {
-  el('demoQuickPresetSelect').addEventListener('change', (e) => {
-    const val = e.target.value;
-    if (val && PRESETS[val]) {
-      createQuestionFromPreset(val);
-      e.target.value = '';
-    }
-  });
-}
-
-// Format Code Button
 if (el('formatCodeBtn')) {
   el('formatCodeBtn').addEventListener('click', () => {
     formatCurrentCode();
   });
 }
 
-// Export Question Package as JSON
-if (el('exportQuestionBtn')) {
-  el('exportQuestionBtn').addEventListener('click', () => {
-    const q = state.questions[state.activeQuestionIndex];
-    if (!q) {
-      alert('No active question to export.');
-      return;
-    }
-    const draft = state.drafts[q.id] || {};
-    const packageData = {
-      schemaVersion: '1.0',
-      exportedAt: new Date().toISOString(),
-      title: q.title || `Program ${state.activeQuestionIndex + 1}`,
-      prompt: q.prompt || '',
-      language: draft.language || q.language || 'python',
-      initialCode: (draft.language === 'mysql') ? getMergedSqlCode(q.id) : (draft.code || getEditorValue()),
-      localFiles: q.localFiles || []
-    };
+// ── File Upload & Drag-and-Drop Handler ──
+async function processFilesForCurrentProgram(fileList) {
+  const files = Array.from(fileList || []);
+  if (files.length === 0) return;
 
-    const jsonStr = JSON.stringify(packageData, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(q.title || 'question').toLowerCase().replace(/[^a-z0-9]+/g, '_')}_package.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  });
-}
+  const q = state.questions[state.activeQuestionIndex];
+  if (!q) return;
+  if (!q.localFiles) q.localFiles = [];
 
-// Import Question Package JSON
-if (el('importQuestionBtn') && el('importQuestionInput')) {
-  el('importQuestionBtn').addEventListener('click', () => {
-    el('importQuestionInput').click();
-  });
+  let hasDataset = false;
 
-  el('importQuestionInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target.result);
-        if (!data.title && !data.prompt) {
-          throw new Error('Invalid question package format.');
-        }
-        const nextNum = state.questions.length + 1;
-        const newQ = {
-          id: `demo-q-${Date.now()}`,
-          number: nextNum,
-          title: data.title || `Program ${nextNum}`,
-          prompt: data.prompt || '',
-          language: data.language || 'python',
-          localFiles: data.localFiles || []
+  for (const file of files) {
+    const isCsv = file.name.endsWith('.csv') || file.name.endsWith('.tsv') || file.name.endsWith('.txt') || file.name.endsWith('.json');
+    if (isCsv) hasDataset = true;
+
+    const fileData = await new Promise((resolve) => {
+      const reader = new FileReader();
+      if (isCsv) {
+        reader.onload = (ev) => {
+          const text = ev.target.result;
+          let base64 = '';
+          try {
+            base64 = btoa(unescape(encodeURIComponent(text)));
+          } catch (err) {
+            base64 = btoa(text);
+          }
+          resolve({
+            filename: file.name,
+            content: base64,
+            dataUrl: `data:text/plain;base64,${base64}`
+          });
         };
-
-        saveCurrentTabState();
-        state.questions.push(newQ);
-        state.drafts[newQ.id] = {
-          code: data.initialCode || (BOILERPLATES[newQ.language] || ''),
-          language: newQ.language,
-          terminal: 'Terminal ready. Write code and click Run Code.',
-          terminalColor: '#10b981',
-        };
-
-        state.activeQuestionIndex = state.questions.length - 1;
-        renderTabs();
-        loadTabState(state.activeQuestionIndex);
-      } catch (err) {
-        alert('Failed to import question JSON: ' + err.message);
-      }
-      e.target.value = '';
-    };
-    reader.readAsText(file);
-  });
-}
-
-// Add local file attachments (CSV, PDF, Images, etc.)
-if (el('addLocalFileBtn') && el('demoAttachFileInput')) {
-  el('addLocalFileBtn').addEventListener('click', () => {
-    el('demoAttachFileInput').click();
-  });
-
-  el('demoAttachFileInput').addEventListener('change', async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    const q = state.questions[state.activeQuestionIndex];
-    if (!q) return;
-    if (!q.localFiles) q.localFiles = [];
-
-    for (const file of files) {
-      const isCsv = file.name.endsWith('.csv') || file.name.endsWith('.tsv') || file.name.endsWith('.txt') || file.name.endsWith('.json');
-
-      const fileData = await new Promise((resolve) => {
-        const reader = new FileReader();
-        if (isCsv) {
-          reader.onload = (ev) => {
-            const text = ev.target.result;
-            let base64 = '';
-            try {
-              base64 = btoa(unescape(encodeURIComponent(text)));
-            } catch (err) {
-              base64 = btoa(text);
-            }
-            resolve({
-              filename: file.name,
-              content: base64,
-              dataUrl: `data:text/plain;base64,${base64}`
-            });
-          };
-          reader.readAsText(file);
-        } else {
-          reader.onload = (ev) => {
-            const dataUrl = ev.target.result;
-            const base64Content = dataUrl.split(',')[1] || '';
-            resolve({
-              filename: file.name,
-              content: base64Content,
-              dataUrl: dataUrl
-            });
-          };
-          reader.readAsDataURL(file);
-        }
-      });
-
-      const existingIdx = q.localFiles.findIndex(f => f.filename === fileData.filename);
-      if (existingIdx >= 0) {
-        q.localFiles[existingIdx] = fileData;
+        reader.readAsText(file);
       } else {
-        q.localFiles.push(fileData);
+        reader.onload = (ev) => {
+          const dataUrl = ev.target.result;
+          const base64Content = dataUrl.split(',')[1] || '';
+          resolve({
+            filename: file.name,
+            content: base64Content,
+            dataUrl: dataUrl
+          });
+        };
+        reader.readAsDataURL(file);
       }
-    }
+    });
 
-    loadDatasetsForDemoQuestion(q.localFiles);
-    renderDemoFiles();
-    e.target.value = '';
+    const existingIdx = q.localFiles.findIndex(f => f.filename === fileData.filename);
+    if (existingIdx >= 0) {
+      q.localFiles[existingIdx] = fileData;
+    } else {
+      q.localFiles.push(fileData);
+    }
+  }
+
+  loadDatasetsForDemoQuestion(q.localFiles);
+  renderDemoFiles();
+
+  if (hasDataset) {
+    switchBottomTab('dataset');
+    const select = el('datasetFileSelect');
+    if (select && currentDatasets.length > 0) {
+      select.value = currentDatasets.length - 1;
+      select.dispatchEvent(new Event('change'));
+    }
+  }
+}
+
+// Wire + Add Files button
+const addFileBtn = el('addLocalFileBtn');
+const fileInput = el('demoAttachFileInput');
+
+if (addFileBtn && fileInput) {
+  addFileBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async (e) => {
+    await processFilesForCurrentProgram(e.target.files);
+    fileInput.value = '';
+  });
+}
+
+// Wire Drag and Drop on Attached Files Panel
+const attachedPanel = el('attachedFilesPanel');
+if (attachedPanel) {
+  ['dragenter', 'dragover'].forEach(eventName => {
+    attachedPanel.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      attachedPanel.classList.add('drag-over');
+    }, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    attachedPanel.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      attachedPanel.classList.remove('drag-over');
+    }, false);
+  });
+
+  attachedPanel.addEventListener('drop', async (e) => {
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files.length > 0) {
+      await processFilesForCurrentProgram(dt.files);
+    }
   });
 }
 
@@ -2490,9 +2252,9 @@ if (demoCloseBtn) {
   });
 }
 
-// Auto-initialize with Python playground if empty
+// Auto-initialize workspace with Program 1
 if (state.questions.length === 0) {
-  createQuestionFromPreset('python_basic');
+  createNewProgram('Program 1', 'python');
 } else {
   renderTabs();
   loadTabState(state.activeQuestionIndex);

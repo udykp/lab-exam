@@ -40,43 +40,15 @@
     }
     .demo-app-name {
       font-weight: 800;
-      font-size: 0.95rem;
+      font-size: 1rem;
       color: var(--text);
-      line-height: 1.1;
-    }
-    .demo-badge-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 0.7rem;
-      font-weight: 700;
-      background: rgba(245, 158, 11, 0.15);
-      color: #f59e0b;
-      border: 1px solid rgba(245, 158, 11, 0.3);
-      padding: 2px 7px;
-      border-radius: 4px;
-      letter-spacing: 0.02em;
-    }
-    .demo-nav-center {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
     }
     .demo-nav-right {
       display: flex;
       align-items: center;
       gap: 10px;
-    }
-    .demo-preset-select {
-      background: var(--bg-2);
-      border: 1.5px solid var(--panel-border);
-      color: var(--text);
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 0.82rem;
-      font-weight: 600;
-      outline: none;
-      cursor: pointer;
     }
     .demo-btn-sm {
       background: var(--bg-2);
@@ -142,111 +114,15 @@
       background: #dc2626 !important;
       color: #ffffff !important;
     }
-
-    /* Preset Launcher Grid */
-    .preset-launcher-wrapper {
-      max-width: 900px;
-      margin: 40px auto;
-      text-align: center;
-      padding: 0 20px;
+    .attached-panel-dropzone {
+      transition: border-color 0.2s, background-color 0.2s;
     }
-    .preset-launcher-title {
-      font-size: 1.8rem;
-      font-weight: 800;
-      color: var(--text);
-      margin: 0 0 8px 0;
-      letter-spacing: -0.02em;
-    }
-    .preset-launcher-subtitle {
-      font-size: 0.95rem;
-      color: var(--muted);
-      margin: 0 0 32px 0;
-    }
-    .preset-cards-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 16px;
-      text-align: left;
-    }
-    .preset-card {
-      background: var(--panel);
-      border: 1px solid var(--panel-border);
-      border-radius: 14px;
-      padding: 20px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .preset-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
-    }
-    .preset-card-tag {
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--accent-2);
-      margin-bottom: 6px;
-    }
-    .preset-card-title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--text);
-      margin: 0 0 6px 0;
-    }
-    .preset-card-desc {
-      font-size: 0.82rem;
-      color: var(--muted);
-      line-height: 1.45;
-      margin: 0 0 16px 0;
-    }
-    .preset-card-btn {
-      align-self: flex-start;
-      font-size: 0.78rem;
-      font-weight: 700;
-      padding: 6px 12px;
-      border-radius: 6px;
-      background: var(--bg-2);
-      border: 1px solid var(--panel-border);
-      color: var(--text);
-    }
-    .preset-card:hover .preset-card-btn {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #ffffff;
-    }
-
-    /* In-Place Question Editor */
-    .question-edit-drawer {
-      background: var(--bg-2);
-      border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      padding: 16px;
-      margin-top: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .dropzone-box {
-      border: 1.5px dashed var(--panel-border);
-      border-radius: 8px;
-      padding: 14px;
-      text-align: center;
-      background: var(--panel);
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .dropzone-box:hover {
-      border-color: var(--accent);
-      background: var(--bg-2);
+    .attached-panel-dropzone.drag-over {
+      border-color: var(--accent) !important;
+      background: rgba(59, 130, 246, 0.08) !important;
     }
   </style>
   <script src="pdfjs/pdf.min.js"></script>
-  <script src="demo.js" defer></script>
 </head>
 <body>
 
@@ -257,33 +133,11 @@
       <img src="logo-light.png" alt="SecureLab Logo" class="demo-logo-img logo-light-only" />
       <div class="demo-title-group">
         <span class="demo-app-name">SecureLab</span>
-        <span class="demo-badge-pill">Sandbox Inactive • Local Test Studio</span>
       </div>
-    </div>
-
-    <!-- Center: Quick Starter Preset Selector -->
-    <div class="demo-nav-center">
-      <label for="demoQuickPresetSelect" style="font-size: 0.8rem; font-weight: 600; color: var(--muted);">Starter Template:</label>
-      <select id="demoQuickPresetSelect" class="demo-preset-select">
-        <option value="">Choose a Template...</option>
-        <option value="python_basic">Python 3 Playground</option>
-        <option value="data_analysis">Data Science & CSV Analysis (Pandas)</option>
-        <option value="matplotlib_plot">Data Visualization (Matplotlib)</option>
-        <option value="cpp_algo">C++ Algorithm Challenge</option>
-        <option value="sql_sandbox">MySQL Database Sandbox</option>
-      </select>
     </div>
 
     <!-- Right Controls -->
     <div class="demo-nav-right">
-      <button id="exportQuestionBtn" type="button" class="demo-btn-sm" title="Export Question Package (.json)">
-        <span>Export JSON</span>
-      </button>
-      <button id="importQuestionBtn" type="button" class="demo-btn-sm" title="Import Question Package (.json)">
-        <span>Import JSON</span>
-      </button>
-      <input id="importQuestionInput" type="file" accept=".json" class="hidden" />
-
       <button id="themeToggleBtn" type="button" class="theme-toggle-btn auth-theme-toggle" title="Toggle Light / Dark Mode">Light</button>
       <button id="exitDemoBtn" class="demo-btn-exit" type="button">Exit Demo</button>
 
@@ -298,68 +152,6 @@
 
   <div class="shell" style="max-width: 1920px; width: min(1920px, calc(100% - 32px)); margin: 0 auto; padding: 16px 0 24px;">
 
-    <!-- Preset Launcher (Shown only when no tabs are active) -->
-    <div id="presetLauncherWrapper" class="preset-launcher-wrapper hidden">
-      <h1 class="preset-launcher-title">Demo Test Environment</h1>
-      <p class="preset-launcher-subtitle">Choose a starter template or create a custom problem to test locally.</p>
-      
-      <div class="preset-cards-grid">
-        <div class="preset-card" data-preset="python_basic">
-          <div>
-            <div class="preset-card-tag">Python</div>
-            <h3 class="preset-card-title">Python 3 Playground</h3>
-            <p class="preset-card-desc">Standard Python execution environment with math, sys, and data structures.</p>
-          </div>
-          <button class="preset-card-btn" type="button">Open Template</button>
-        </div>
-
-        <div class="preset-card" data-preset="data_analysis">
-          <div>
-            <div class="preset-card-tag">Data Science</div>
-            <h3 class="preset-card-title">CSV & Pandas Analysis</h3>
-            <p class="preset-card-desc">Attached sample student scores dataset with dataframe queries and statistics.</p>
-          </div>
-          <button class="preset-card-btn" type="button">Open Template</button>
-        </div>
-
-        <div class="preset-card" data-preset="matplotlib_plot">
-          <div>
-            <div class="preset-card-tag">Visualization</div>
-            <h3 class="preset-card-title">Matplotlib Plotting</h3>
-            <p class="preset-card-desc">Generates charts and automatically displays them in the integrated Plots viewer.</p>
-          </div>
-          <button class="preset-card-btn" type="button">Open Template</button>
-        </div>
-
-        <div class="preset-card" data-preset="cpp_algo">
-          <div>
-            <div class="preset-card-tag">C / C++</div>
-            <h3 class="preset-card-title">C++ Algorithm Test</h3>
-            <p class="preset-card-desc">GCC/G++ compiled algorithm environment with vectors and binary search.</p>
-          </div>
-          <button class="preset-card-btn" type="button">Open Template</button>
-        </div>
-
-        <div class="preset-card" data-preset="sql_sandbox">
-          <div>
-            <div class="preset-card-tag">Database</div>
-            <h3 class="preset-card-title">MySQL Database Notebook</h3>
-            <p class="preset-card-desc">Multi-cell interactive SQL playground with instant table result grids.</p>
-          </div>
-          <button class="preset-card-btn" type="button">Open Template</button>
-        </div>
-
-        <div class="preset-card" data-preset="custom_blank">
-          <div>
-            <div class="preset-card-tag">Blank</div>
-            <h3 class="preset-card-title">Custom Question</h3>
-            <p class="preset-card-desc">Start from scratch with your own question title, prompt statement, and files.</p>
-          </div>
-          <button class="preset-card-btn" type="button">Create Blank</button>
-        </div>
-      </div>
-    </div>
-
     <div id="workspaceSplitContainer" class="workspace-split-container">
       <!-- LEFT COLUMN: Program Tabs & Attached Files Deck -->
       <aside class="workspace-left-deck" style="max-width: 320px; width: 320px; flex-shrink: 0;">
@@ -367,7 +159,7 @@
         <div id="studentTabs" style="display: flex; gap: 8px; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;"></div>
 
         <!-- Attached Files & Datasets Panel -->
-        <div class="panel" style="padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-border);">
+        <div id="attachedFilesPanel" class="panel attached-panel-dropzone" style="padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-border);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="font-weight: 700; font-size: 0.9rem; color: var(--text);">Attached Files</span>
@@ -559,5 +351,6 @@
     </div>
   </div>
 
+  <script src="demo.js"></script>
 </body>
 </html>
