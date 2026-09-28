@@ -29,7 +29,9 @@ APT_PKGS=(
   python3-scipy
   python3-pandas
   python3-matplotlib
+  python3-seaborn
   python3-openpyxl
+  bubblewrap
   gcc
   g++
   default-jdk

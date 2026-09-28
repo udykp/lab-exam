@@ -6,6 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron . --no-sandbox",
+    "setup": "bash setup_env.sh",
     "package": "electron-builder --linux deb"
   },
   "dependencies": {
