@@ -351,7 +351,19 @@
     </div>
   </div>
 
+  <script>
+    if (typeof define === 'function' && define.amd) {
+      window._monacoDefine = window.define;
+      window.define = undefined;
+    }
+  </script>
   <script src="pdfjs/pdf.min.js"></script>
+  <script>
+    if (window._monacoDefine) {
+      window.define = window._monacoDefine;
+      delete window._monacoDefine;
+    }
+  </script>
   <script src="demo.js"></script>
 </body>
 </html>
