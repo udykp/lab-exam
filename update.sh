@@ -31,14 +31,15 @@ if [ -f "package-lock.json" ]; then
   OLD_LOCK_HASH="$(md5sum package-lock.json 2>/dev/null | awk '{print $1}')"
 fi
 
-# 3. Pull latest changes
+# 3. Pull latest changes safely (resetting local tracked changes so client updates never block)
 git fetch origin main
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
-  git pull --ff-only origin "$CURRENT_BRANCH"
+  # Discard any local modifications to tracked files (like run.sh edits) so updates always succeed
+  git reset --hard origin/"$CURRENT_BRANCH"
 else
-  echo "Note: Currently on branch '$CURRENT_BRANCH'. Pulling origin/$CURRENT_BRANCH..."
-  git pull --ff-only origin "$CURRENT_BRANCH" || true
+  echo "Note: Currently on branch '$CURRENT_BRANCH'. Syncing with origin/$CURRENT_BRANCH..."
+  git reset --hard origin/"$CURRENT_BRANCH" || git pull origin "$CURRENT_BRANCH" || true
 fi
 
 # 4. Check if dependencies changed
