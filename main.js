@@ -1,9 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 
-// Disable GPU hardware acceleration to prevent rendering thread freezes on Linux drivers
-app.disableHardwareAcceleration();
-
 const kiosk = require('./src/kiosk');
 const runner = require('./src/runner');
 const virtualSql = require('./src/virtual-sql');
@@ -39,6 +36,17 @@ function createWindow() {
 
   // Setup kiosk mode, input event filters, focus recovery, and resize guards
   kiosk.setupWindowGuards(mainWindow, __dirname);
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
