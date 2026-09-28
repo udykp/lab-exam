@@ -1215,6 +1215,11 @@ code {
   transition: border-color 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-height: calc(100vh - 260px);
 }
 
 .pdf-viewer-deck-card:hover {
@@ -1232,6 +1237,7 @@ code {
   flex-wrap: wrap;
   user-select: none;
   -webkit-user-select: none;
+  flex-shrink: 0;
 }
 
 .pdf-btn {
@@ -1271,9 +1277,13 @@ code {
 .pdf-frame-wrapper {
   position: relative;
   width: 100%;
+  flex: 1;
+  min-height: 240px;
+  max-height: calc(100vh - 310px);
   height: 520px;
   background: #18181b;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: auto;
   user-select: none;
   -webkit-user-select: none;
   padding: 16px;

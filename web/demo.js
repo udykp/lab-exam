@@ -537,7 +537,7 @@ const renderDemoFiles = () => {
     return;
   }
 
-  container.innerHTML = files.map((file, idx) => {
+  const filePillsHtml = files.map((file, idx) => {
     const isCsv = file.filename.endsWith('.csv') || file.filename.endsWith('.tsv');
     const isPdf = file.filename.endsWith('.pdf');
     const isImg = file.filename.match(/\.(png|jpe?g|gif|webp|svg)$/i);
@@ -572,6 +572,112 @@ const renderDemoFiles = () => {
       </div>
     `;
   }).join('');
+
+  // Embedded cards for PDF documents or images
+  const mediaCardsHtml = files.map((file, idx) => {
+    const isPdf = file.filename.endsWith('.pdf');
+    const isImg = file.filename.match(/\.(png|jpe?g|gif|webp|svg)$/i);
+    const cleanName = escapeHtml(file.filename);
+    const sourceUrl = file.dataUrl || (isPdf ? `data:application/pdf;base64,${file.content}` : `data:image/png;base64,${file.content}`);
+
+    if (isPdf) {
+      return `
+        <div class="pdf-viewer-deck-card no-copy-zone" data-index="${idx}" oncontextmenu="return false;">
+          <div class="pdf-toolbar">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+              <span style="font-weight: 700; font-size: 0.82rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Document: ${cleanName}</span>
+              <span style="font-size: 0.7rem; color: var(--muted); background: var(--panel); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--panel-border); font-weight: 600;">PDF</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px; flex-shrink: 0;">
+              <button type="button" class="pdf-btn pdf-split-zoom-out" title="Zoom Out">🔍-</button>
+              <span class="pdf-split-zoom-label" style="font-size: 0.75rem; color: var(--muted); font-weight: 600; min-width: 38px; text-align: center;">100%</span>
+              <button type="button" class="pdf-btn pdf-split-zoom-in" title="Zoom In">🔍+</button>
+              <button type="button" class="pdf-btn pdf-split-zoom-reset" title="Reset Zoom">Reset</button>
+              <button type="button" class="pdf-btn pdf-btn-expand pdf-split-expand-btn" data-index="${idx}" data-title="${cleanName}" title="Expand Document">⛶ Expand</button>
+            </div>
+          </div>
+          <div class="pdf-frame-wrapper no-copy-zone">
+            <div class="pdf-canvas-container no-copy-zone" data-index="${idx}">
+              <div class="pdf-loading-indicator"><div class="pdf-loading-spinner"></div><span>Loading document...</span></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (isImg) {
+      return `
+        <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 12px;">
+          <img class="demo-attachment-image" src="${sourceUrl}" alt="${cleanName}" style="max-width: 100%; max-height: 350px; border-radius: 8px; border: 1px solid var(--panel-border); object-fit: contain; background: var(--bg-2); cursor: zoom-in;" />
+        </div>
+      `;
+    }
+
+    return '';
+  }).join('');
+
+  container.innerHTML = filePillsHtml + mediaCardsHtml;
+
+  container.querySelectorAll('.demo-attachment-image').forEach(img => {
+    img.addEventListener('click', () => {
+      openImageLightbox(img.src);
+    });
+  });
+
+  // Bind interactive controls and render canvas for embedded PDF cards
+  container.querySelectorAll('.pdf-viewer-deck-card').forEach(card => {
+    const idx = parseInt(card.getAttribute('data-index'), 10);
+    const file = files[idx];
+    if (!file) return;
+
+    const canvasContainer = card.querySelector('.pdf-canvas-container');
+    const zoomLabel = card.querySelector('.pdf-split-zoom-label');
+    const expandBtn = card.querySelector('.pdf-split-expand-btn');
+    const pdfUrl = file.dataUrl || `data:application/pdf;base64,${file.content}`;
+    const title = file.filename || 'Document';
+    let currentZoom = 1.0;
+    let loadedPdfDoc = null;
+
+    if (pdfUrl && canvasContainer) {
+      getPdfDocument(pdfUrl).then(doc => {
+        loadedPdfDoc = doc;
+        renderPdfPagesToContainer(canvasContainer, doc, 1.0, true);
+      }).catch(err => {
+        console.error('Failed to render split PDF:', err);
+        canvasContainer.innerHTML = `<div style="padding: 24px; color: #ef4444; text-align: center;">Failed to load PDF: ${err.message || err}</div>`;
+      });
+    }
+
+    const updateFrameZoom = (newZoom) => {
+      if (!loadedPdfDoc || !canvasContainer) return;
+      currentZoom = Math.min(2.5, Math.max(0.6, Math.round(newZoom * 100) / 100));
+      if (zoomLabel) zoomLabel.textContent = `${Math.round(currentZoom * 100)}%`;
+      renderPdfPagesToContainer(canvasContainer, loadedPdfDoc, currentZoom, true);
+    };
+
+    const zoomInBtn = card.querySelector('.pdf-split-zoom-in');
+    if (zoomInBtn) {
+      zoomInBtn.addEventListener('click', () => updateFrameZoom(currentZoom + 0.25));
+    }
+
+    const zoomOutBtn = card.querySelector('.pdf-split-zoom-out');
+    if (zoomOutBtn) {
+      zoomOutBtn.addEventListener('click', () => updateFrameZoom(currentZoom - 0.25));
+    }
+
+    const zoomResetBtn = card.querySelector('.pdf-split-zoom-reset');
+    if (zoomResetBtn) {
+      zoomResetBtn.addEventListener('click', () => updateFrameZoom(1.0));
+    }
+
+    if (expandBtn) {
+      expandBtn.addEventListener('click', () => {
+        if (typeof window.openPdfModal === 'function') {
+          window.openPdfModal(loadedPdfDoc || pdfUrl, title);
+        }
+      });
+    }
+  });
 
   container.querySelectorAll('.demo-file-open-action').forEach(elItem => {
     elItem.addEventListener('click', () => {
@@ -932,6 +1038,7 @@ function setEditorLanguage(lang) {
 
 // Add or Update Plot inside Sidebar split gallery
 function addOrUpdatePlot(data) {
+  if (!data || !data.content || typeof data.content !== 'string' || data.content.trim().length === 0) return;
   const plotsSidebar = el('plotsSidebar');
   const plotsPlaceholder = el('plotsPlaceholder');
   const plotsActiveDisplay = el('plotsActiveDisplay');

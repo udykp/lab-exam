@@ -154,13 +154,13 @@
 
     <div id="workspaceSplitContainer" class="workspace-split-container">
       <!-- LEFT COLUMN: Program Tabs & Attached Files Deck -->
-      <aside class="workspace-left-deck" style="max-width: 320px; width: 320px; flex-shrink: 0;">
+      <aside class="workspace-left-deck">
         <!-- Program Tabs Bar -->
         <div id="studentTabs" style="display: flex; gap: 8px; border-bottom: 1px solid var(--panel-border); padding-bottom: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;"></div>
 
         <!-- Attached Files & Datasets Panel -->
-        <div id="attachedFilesPanel" class="panel attached-panel-dropzone" style="padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-border);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div id="attachedFilesPanel" class="panel attached-panel-dropzone" style="padding: 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-border); flex: 1; display: flex; flex-direction: column; min-height: 560px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-shrink: 0;">
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="font-weight: 700; font-size: 0.9rem; color: var(--text);">Attached Files</span>
               <span id="attachedFilesCountBadge" style="background: var(--bg-2); border: 1px solid var(--panel-border); font-size: 0.72rem; padding: 1px 6px; border-radius: 99px; font-weight: 700; color: var(--muted);">0</span>
@@ -171,12 +171,12 @@
             <input id="demoAttachFileInput" type="file" multiple accept=".csv,.tsv,.json,.txt,.pdf,.png,.jpg,.jpeg,.zip" class="hidden" />
           </div>
 
-          <p style="font-size: 0.76rem; color: var(--muted); margin: 0 0 12px 0; line-height: 1.4;">
+          <p style="font-size: 0.76rem; color: var(--muted); margin: 0 0 12px 0; line-height: 1.4; flex-shrink: 0;">
             Attach local CSV datasets, PDF question papers, or images for this program.
           </p>
 
           <!-- Files List Container -->
-          <div id="demoFilesList" style="display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto;">
+          <div id="demoFilesList" style="display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto;">
             <div id="noFilesPlaceholder" style="text-align: center; padding: 24px 12px; color: var(--muted); font-size: 0.8rem; border: 1.5px dashed var(--panel-border); border-radius: 8px;">
               No files attached yet.<br>Click <strong>+ Add Files</strong> to upload CSV, PDF, or images.
             </div>
@@ -351,6 +351,7 @@
     </div>
   </div>
 
+  <script src="pdfjs/pdf.min.js"></script>
   <script src="demo.js"></script>
 </body>
 </html>

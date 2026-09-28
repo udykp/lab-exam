@@ -35,6 +35,13 @@ APT_PKGS=(
   default-jdk
   r-base
   r-cran-plotrix
+  r-cran-ggplot2
+  r-cran-dplyr
+  r-cran-readr
+  r-cran-tidyr
+  r-cran-caret
+  r-cran-randomforest
+  r-cran-e1071
   mysql-server
   mysql-client
 )
@@ -42,6 +49,14 @@ APT_PKGS=(
 if command -v sudo &>/dev/null; then
   sudo apt-get install -y "${APT_PKGS[@]}" || true
   sudo apt-get install -y python3-sklearn 2>/dev/null || sudo apt-get install -y python3-scikitlearn 2>/dev/null || true
+  # Ensure java runtime matches javac compiler version
+  if command -v javac &>/dev/null; then
+    REAL_JAVAC="$(readlink -f "$(which javac)" 2>/dev/null || true)"
+    SIBLING_JAVA="$(dirname "$REAL_JAVAC")/java"
+    if [ -f "$SIBLING_JAVA" ]; then
+      sudo update-alternatives --set java "$SIBLING_JAVA" 2>/dev/null || true
+    fi
+  fi
 else
   apt-get install -y "${APT_PKGS[@]}" || true
   apt-get install -y python3-sklearn 2>/dev/null || apt-get install -y python3-scikitlearn 2>/dev/null || true
@@ -102,6 +117,15 @@ check_py_lib() {
   fi
 }
 
+check_r_lib() {
+  local lib="$1"
+  if Rscript -e "library($lib)" >/dev/null 2>&1; then
+    echo -e "  [${GREEN}✔ OK${NC}] R Package: $lib"
+  else
+    echo -e "  [${RED}✘ MISSING${NC}] R Package: $lib"
+  fi
+}
+
 check_cmd "Python 3 Runtime" "python3 --version"
 check_py_lib "numpy"
 check_py_lib "pandas"
@@ -113,6 +137,8 @@ check_cmd "GCC (C Compiler)" "gcc --version"
 check_cmd "G++ (C++ Compiler)" "g++ --version"
 check_cmd "Java (JDK)" "javac -version"
 check_cmd "R / Rscript" "Rscript --version"
+check_r_lib "ggplot2"
+check_r_lib "dplyr"
 check_cmd "MySQL Client" "mysql --version"
 
 echo -e "\n${GREEN}===============================================${NC}"

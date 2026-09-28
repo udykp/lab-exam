@@ -446,6 +446,7 @@ const loadDatasetsForQuestion = async (attachmentUrls) => {
 
 // Add or Update Plot inside Sidebar split gallery
 function addOrUpdatePlot(data) {
+  if (!data || !data.content || typeof data.content !== 'string' || data.content.trim().length === 0) return;
   const plotsSidebar = el('plotsSidebar');
   const plotsPlaceholder = el('plotsPlaceholder');
   const plotsActiveDisplay = el('plotsActiveDisplay');
