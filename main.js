@@ -1,10 +1,13 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 
+// Disable GPU hardware acceleration to prevent rendering and input thread freezes on Linux Intel Mesa drivers
+app.disableHardwareAcceleration();
+
 // Rendering and GPU stability switches for Linux Mesa / Intel UHD Graphics
 app.commandLine.appendSwitch('disable-gpu-vsync');
 app.commandLine.appendSwitch('disable-features', 'UseChromeOSDirectVideoDecoder');
-app.commandLine.appendSwitch('enable-font-antialiasing');
+//app.commandLine.appendSwitch('enable-font-antialiasing');
 
 const kiosk = require('./src/kiosk');
 const runner = require('./src/runner');

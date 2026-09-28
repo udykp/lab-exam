@@ -251,8 +251,7 @@ function setupWindowGuards(mainWindow, appDir) {
     }
 
     const key = input.key.toLowerCase();
-    const isMetaModifier = input.meta || input.key === 'Meta' || input.key === 'Super' || input.key === 'OS';
-    const isStandaloneSuper = isMetaModifier && (input.key === 'Meta' || input.key === 'Super' || input.key === 'OS');
+    const isStandaloneSuper = input.key === 'Meta' || input.key === 'Super' || input.key === 'OS';
 
     const isSuperComboSwitching = input.meta && (
       key === 'tab' ||
@@ -273,7 +272,7 @@ function setupWindowGuards(mainWindow, appDir) {
       (input.alt && key === 'f4') ||
       (input.alt && key === 'escape');
 
-    if (isMetaModifier || isDevToolsOrReload || isAltTabSwitching) {
+    if (isStandaloneSuper || isSuperComboSwitching || isDevToolsOrReload || isAltTabSwitching) {
       event.preventDefault();
 
       if (isSuperComboSwitching || isAltTabSwitching) {

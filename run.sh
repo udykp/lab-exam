@@ -10,7 +10,7 @@ for node_bin in "$HOME"/.nvm/versions/node/*/bin; do
   fi
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Fast silent auto-update check (3-second timeout, skips if offline)
