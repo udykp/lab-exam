@@ -3279,38 +3279,15 @@ window.addEventListener('load', async () => {
           window.electronAPI.sendStdin(val);
           el('terminalInput').value = '';
         } else {
-          // No program running - treat as virtual env pip command
+          // No program running - handle input or pip command attempt
           el('terminalOutput').textContent += `\n$ ${val}\n`;
-          el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
           el('terminalInput').value = '';
 
-          const match = val.match(/^(python3\s+-m\s+)?pip(3)?\s+install\s+(.+)$/i);
-          if (match && window.electronAPI) {
-            const rawPackages = match[3];
-            const packages = rawPackages.split(/\s+/).filter(p => p.trim() && !p.startsWith('-'));
-            if (packages.length > 0) {
-              el('terminalInput').disabled = true;
-              el('terminalInput').placeholder = 'Installing package(s)... Please wait...';
-              
-              window.electronAPI.onCodeOutput((data) => {
-                el('terminalOutput').textContent += data.data;
-                el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
-              });
-
-              window.electronAPI.onPipExit((data) => {
-                el('terminalInput').disabled = false;
-                el('terminalInput').placeholder = 'Type input here and press Enter...';
-                el('terminalInput').focus();
-                window.electronAPI.removePipListeners();
-                window.electronAPI.removeCodeListeners();
-              });
-              
-              window.electronAPI.runPipInstall(packages);
-            } else {
-              el('terminalOutput').textContent += `[System Error]: Please specify at least one package name.\n`;
-            }
+          const match = val.match(/^(python3\s+-m\s+)?pip(3)?\s+install/i);
+          if (match) {
+            el('terminalOutput').textContent += `[System]: Terminal package installation is disabled. All required course packages are pre-installed.\n`;
           } else {
-            el('terminalOutput').textContent += `[System Error]: Only 'pip install <package>' commands are allowed for environment setup.\n`;
+            el('terminalOutput').textContent += `[System]: No program is currently awaiting input. Click 'Run Code' to execute your program.\n`;
           }
           el('terminalOutputContainer').scrollTop = el('terminalOutputContainer').scrollHeight;
         }

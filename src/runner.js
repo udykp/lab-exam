@@ -588,40 +588,8 @@ function sendStdin(text) {
 }
 
 function runPipInstall(event, packages) {
-  const pipBin = process.platform === 'win32' ? path.join(venvPath, 'Scripts', 'pip.exe') : path.join(venvPath, 'bin', 'pip');
-
-  if (!fs.existsSync(pipBin)) {
-    sendOutput(event, `\n[Error]: Python virtual environment is not fully initialized. Please wait a moment and try again.\n`, 'stderr');
-    event.sender.send('pip-exit', { exitCode: 1 });
-    return;
-  }
-
-  sendOutput(event, `\n[System]: Installing package(s): ${packages.join(', ')}...\n`);
-
-  const cleanPackages = packages.filter(p => !p.startsWith('-') && /^[a-zA-Z0-9_\-\.]+$/.test(p));
-  if (cleanPackages.length === 0) {
-    sendOutput(event, `[Error]: Invalid package names.\n`, 'stderr');
-    event.sender.send('pip-exit', { exitCode: 1 });
-    return;
-  }
-
-  try {
-    const proc = spawn(pipBin, ['install', ...cleanPackages], { env: process.env });
-    proc.on('error', (err) => {
-      sendOutput(event, `\n[Error]: Failed to run pip install: ${err.message}\n`, 'stderr');
-      event.sender.send('pip-exit', { exitCode: 1 });
-    });
-    proc.stdout.on('data', data => sendOutput(event, data.toString()));
-    proc.stderr.on('data', data => sendOutput(event, data.toString(), 'stderr'));
-    proc.on('close', code => {
-      if (code === 0) sendOutput(event, `\n[System]: Installation completed successfully!\n`);
-      else sendOutput(event, `\n[System]: Installation failed with exit code ${code}.\n`, 'stderr');
-      event.sender.send('pip-exit', { exitCode: code });
-    });
-  } catch (err) {
-    sendOutput(event, `\n[Error]: Exception while launching pip: ${err.message}\n`, 'stderr');
-    event.sender.send('pip-exit', { exitCode: 1 });
-  }
+  sendOutput(event, `\n[System]: Terminal package installation is disabled. All required course packages are pre-installed.\n`, 'stderr');
+  event.sender.send('pip-exit', { exitCode: 1 });
 }
 
 function registerRunnerIPC(ipcMain) {
