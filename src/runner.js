@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const sandbox = require('./sandbox');
+const guiDocker = require('./gui-docker');
 
 function isGuiCode(language, code) {
   if (!code) return false;
@@ -182,6 +183,16 @@ function spawnAndStream(event, originalCmd, originalArgs, opts = {}, extraBinds 
   // Detach so we can cleanly terminate the entire process group if needed
   const proc = spawn(cmd, args, { env: process.env, detached: process.platform !== 'win32', ...opts });
   runningProcess = proc;
+
+  if (opts && opts.isGui) {
+    const win = getMainWindowInstance ? getMainWindowInstance() : null;
+    if (win && proc && proc.pid) {
+      guiDocker.dockGuiProcess(win, proc.pid, {
+        titleHint: opts.titleHint,
+        lang: opts.lang
+      });
+    }
+  }
 
   let peakMemoryKb = 0;
   let memPollInterval = null;
@@ -475,7 +486,10 @@ except:
       const pyRunEnv = guiSession ? { ...pythonEnv, DISPLAY: guiSession.display } : pythonEnv;
       runResult = await spawnAndStream(event, pythonExecutable, ['-u', 'solution.py'], {
         cwd: runDir,
-        env: pyRunEnv
+        env: pyRunEnv,
+        isGui,
+        titleHint: 'python',
+        lang: 'python'
       }, extraBinds);
     }
 
@@ -505,7 +519,13 @@ except:
           '-Dswing.aatext=true',
           className
         ] : [className];
-        runResult = await spawnAndStream(event, javaBin, javaArgs, { cwd: runDir, env: runEnv }, extraBinds);
+        runResult = await spawnAndStream(event, javaBin, javaArgs, {
+          cwd: runDir,
+          env: runEnv,
+          isGui,
+          titleHint: className,
+          lang: 'java'
+        }, extraBinds);
       } else {
         runResult = compileRes;
       }
@@ -614,6 +634,7 @@ tryCatch({
 
   // Cleanup run directory recursively
   try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
+  guiDocker.stopGuiSession();
   if (isGui && kioskManager) {
     const win = getMainWindowInstance ? getMainWindowInstance() : null;
     kioskManager.endGuiSession(win);
@@ -628,6 +649,7 @@ tryCatch({
 }
 
 function stopCode(event) {
+  guiDocker.stopGuiSession();
   if (kioskManager) {
     const win = getMainWindowInstance ? getMainWindowInstance() : null;
     kioskManager.endGuiSession(win);

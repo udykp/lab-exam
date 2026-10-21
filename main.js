@@ -14,6 +14,7 @@ const runner = require('./src/runner');
 const virtualSql = require('./src/virtual-sql');
 const backendManager = require('./src/backend-manager');
 const fileUtils = require('./src/file-utils');
+const guiDocker = require('./src/gui-docker');
 
 let mainWindow = null;
 
@@ -86,6 +87,7 @@ runner.registerRunnerIPC(ipcMain, kiosk, () => mainWindow);
 virtualSql.registerVirtualSqlIPC(ipcMain);
 fileUtils.registerFileUtilsIPC(ipcMain, app);
 backendManager.registerBackendIPC(ipcMain);
+guiDocker.registerGuiDockerIPC(ipcMain);
 kiosk.registerKioskIPC(ipcMain, () => mainWindow, handleExitApp);
 
 // ── Safety & Cleanup Hooks ───────────────────────────────────────────────────

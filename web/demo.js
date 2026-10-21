@@ -1860,14 +1860,43 @@ if (languageSelect) {
   if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
   if (tabDatasetBtn) tabDatasetBtn.addEventListener('click', () => switchBottomTab('dataset'));
 
-  // Register Dedicated Native GUI Opener Handlers
+  // Register Dedicated Native GUI Embedded Dock Handlers
+  let isNativeGuiActive = false;
+
+  const triggerGuiRefocus = () => {
+    if (window.electronAPI && window.electronAPI.refocusGuiWindow) {
+      window.electronAPI.refocusGuiWindow();
+    }
+  };
+
   if (window.electronAPI && window.electronAPI.onGuiOpenerStarted) {
     window.electronAPI.onGuiOpenerStarted((data) => {
-      console.log('[GUI Opener] App started:', data);
+      console.log('[GUI Docker] App started:', data);
+      isNativeGuiActive = true;
       const banner = el('guiActiveBanner');
       const title = el('guiActiveTitle');
+      const dock = el('guiDockContainer');
+      const dockTitle = el('guiDockAppTitle');
+
       if (banner) banner.classList.remove('hidden');
       if (title && data && data.title) title.textContent = data.title;
+      if (dock) dock.classList.remove('hidden');
+      if (dockTitle && data && data.title) dockTitle.textContent = data.title;
+
+      // Report exact dock viewport bounds to Electron
+      setTimeout(() => {
+        const viewport = el('guiDockViewport');
+        if (viewport && window.electronAPI && window.electronAPI.sendGuiBounds) {
+          const rect = viewport.getBoundingClientRect();
+          window.electronAPI.sendGuiBounds({
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height
+          });
+        }
+      }, 80);
+
       const runBtn = el('runCodeBtn');
       if (runBtn) {
         runBtn.innerHTML = '<span>■</span> Stop';
@@ -1876,9 +1905,13 @@ if (languageSelect) {
     });
 
     window.electronAPI.onGuiOpenerStopped(() => {
-      console.log('[GUI Opener] App stopped');
+      console.log('[GUI Docker] App stopped');
+      isNativeGuiActive = false;
       const banner = el('guiActiveBanner');
       if (banner) banner.classList.add('hidden');
+      const dock = el('guiDockContainer');
+      if (dock) dock.classList.add('hidden');
+
       const runBtn = el('runCodeBtn');
       if (runBtn) {
         runBtn.innerHTML = '<span>▶</span> Run Code';
@@ -1895,6 +1928,34 @@ if (languageSelect) {
       }
     });
   }
+
+  const dockStopBtn = el('guiDockStopBtn');
+  if (dockStopBtn) {
+    dockStopBtn.addEventListener('click', () => {
+      if (window.electronAPI && window.electronAPI.stopCode) {
+        window.electronAPI.stopCode();
+      }
+    });
+  }
+
+  const refocusBannerBtn = el('guiRefocusBannerBtn');
+  if (refocusBannerBtn) {
+    refocusBannerBtn.addEventListener('click', triggerGuiRefocus);
+  }
+
+  const dockRefocusBtn = el('guiDockRefocusBtn');
+  if (dockRefocusBtn) {
+    dockRefocusBtn.addEventListener('click', triggerGuiRefocus);
+  }
+
+  // Auto-refocus GUI window if student clicks anywhere on the editor background during active GUI
+  document.addEventListener('click', (e) => {
+    if (!isNativeGuiActive) return;
+    if (e.target.closest('#guiActiveBanner') || e.target.closest('#guiDockContainer') || e.target.closest('#runCodeBtn')) {
+      return;
+    }
+    triggerGuiRefocus();
+  });
 
   // Dataset File Select & Search Filter
   if (el('datasetFileSelect')) {

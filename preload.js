@@ -75,9 +75,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onGuiOpenerStopped: (callback) => {
     ipcRenderer.on('gui-opener-stopped', () => callback());
   },
+  onGuiDockAttached: (callback) => {
+    ipcRenderer.on('gui-dock-attached', (event, data) => callback(data));
+  },
+  refocusGuiWindow: () => {
+    ipcRenderer.send('gui-docker-refocus');
+  },
+  sendGuiBounds: (bounds) => {
+    ipcRenderer.send('gui-docker-bounds', bounds);
+  },
   removeGuiOpenerListeners: () => {
     ipcRenderer.removeAllListeners('gui-opener-started');
     ipcRenderer.removeAllListeners('gui-opener-stopped');
+    ipcRenderer.removeAllListeners('gui-dock-attached');
   },
   fetchTextUrl: (url) => {
     return ipcRenderer.invoke('fetch-text-url', url);

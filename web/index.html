@@ -35,9 +35,11 @@
   <!-- Dedicated Floating Controller for Native GUI Execution -->
   <div id="guiActiveBanner" class="hidden" style="position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 99998; background: #0f172a; border: 1.5px solid #10b981; border-radius: 9999px; padding: 8px 22px; box-shadow: 0 12px 35px rgba(0,0,0,0.7); display: flex; align-items: center; gap: 14px; backdrop-filter: blur(8px);">
     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981;"></span>
-    <span style="font-weight: 700; font-size: 0.88rem; color: #f8fafc; letter-spacing: 0.3px;">Interactive GUI App Active:</span>
+    <span style="font-weight: 700; font-size: 0.88rem; color: #f8fafc; letter-spacing: 0.3px;">Interactive GUI Active:</span>
     <span id="guiActiveTitle" style="font-size: 0.84rem; color: #38bdf8; font-family: monospace; font-weight: 600;">TrafficLight</span>
-    <span style="font-size: 0.78rem; color: #94a3b8; font-style: italic;">(Window open on desktop screen)</span>
+    <button id="guiRefocusBannerBtn" type="button" style="background: #3b82f6; color: #ffffff; border: none; padding: 5px 14px; border-radius: 9999px; font-weight: 700; font-size: 0.78rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);">
+      <span>🗔</span> Bring to Front
+    </button>
     <button id="guiStopBannerBtn" type="button" style="background: #ef4444; color: #ffffff; border: none; padding: 5px 14px; border-radius: 9999px; font-weight: 700; font-size: 0.78rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);">
       <span>■</span> Stop App
     </button>
@@ -240,6 +242,29 @@
           <!-- STANDARD CODING WORKSPACE (For Programming / Hybrid Lab Exams) -->
           <div id="codingSplitWorkspace" class="workspace-split-container">
             
+            <!-- Native GUI Embedded Dock Container -->
+            <div id="guiDockContainer" class="gui-dock-container hidden">
+              <div class="gui-dock-card">
+                <div class="gui-dock-header">
+                  <div class="gui-dock-title-group">
+                    <span class="gui-status-dot"></span>
+                    <span id="guiDockAppTitle" class="gui-dock-title">TrafficLight</span>
+                    <span class="gui-dock-tag">Native Embedded GUI</span>
+                  </div>
+                  <div class="gui-dock-actions">
+                    <button id="guiDockRefocusBtn" type="button" class="btn-dock-action" title="Bring window to front">🗔 Bring to Front</button>
+                    <button id="guiDockStopBtn" type="button" class="btn-dock-stop" title="Stop application">✖ Stop App</button>
+                  </div>
+                </div>
+                <div id="guiDockViewport" class="gui-dock-viewport">
+                  <div class="gui-dock-placeholder">
+                    <div class="gui-dock-spinner"></div>
+                    <span>Embedded GUI Active (Click controls to interact)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- LEFT COLUMN: Problem Statement & Reference Deck -->
             <aside class="workspace-left-deck">
               <div id="studentTabs" class="hidden" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
