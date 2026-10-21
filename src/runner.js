@@ -3,22 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const sandbox = require('./sandbox');
-const guiDocker = require('./gui-docker');
-
-function isGuiCode(language, code) {
-  if (!code) return false;
-  const lang = (language || '').toLowerCase();
-  if (lang.includes('java')) {
-    return /import\s+(javax\.swing|java\.awt)|extends\s+(JFrame|Frame|JPanel|Applet|JApplet|JDialog|Window)|new\s+(JFrame|Frame)/i.test(code);
-  }
-  if (lang.includes('python')) {
-    return /import\s+(tkinter|PyQt5|PyQt6|PySide2|PySide6|wx)|from\s+(tkinter|PyQt5|PyQt6|PySide2|PySide6|wx)/i.test(code);
-  }
-  if (lang === 'c' || lang === 'cpp') {
-    return /<gtk\/gtk\.h>|<QApplication>|<GL\/glut\.h>|<SDL2\/SDL\.h>/i.test(code);
-  }
-  return false;
-}
+const guiRunner = require('./gui-runner');
 
 const venvPath = path.join(os.homedir(), '.securemlexam-venv');
 let pythonExecutable = 'python3';
@@ -183,16 +168,6 @@ function spawnAndStream(event, originalCmd, originalArgs, opts = {}, extraBinds 
   // Detach so we can cleanly terminate the entire process group if needed
   const proc = spawn(cmd, args, { env: process.env, detached: process.platform !== 'win32', ...opts });
   runningProcess = proc;
-
-  if (opts && opts.isGui) {
-    const win = getMainWindowInstance ? getMainWindowInstance() : null;
-    if (win && proc && proc.pid) {
-      guiDocker.dockGuiProcess(win, proc.pid, {
-        titleHint: opts.titleHint,
-        lang: opts.lang
-      });
-    }
-  }
 
   let peakMemoryKb = 0;
   let memPollInterval = null;
@@ -365,43 +340,33 @@ async function runCode(event, { code, language, attachments }) {
     } catch (_) {}
     runningProcess = null;
   }
+  guiRunner.stopGuiSession(event);
   cleanupTempFiles();
 
   const lang = (language || 'python').toLowerCase();
   const ts = Date.now();
   let runResult = { exitCode: 0, executionTimeMs: 0, peakMemoryMb: null };
 
-  const isGui = isGuiCode(lang, code);
-  let activeMainWindow = null;
+  const isGui = guiRunner.isGuiCode(lang, code);
+  let guiSession = null;
   if (isGui) {
-    if (getMainWindowInstance) {
-      activeMainWindow = getMainWindowInstance();
+    if (guiRunner.hasGuiTools()) {
+      sendOutput(event, '[Virtual Display] Initializing interactive in-workspace GUI session...\n');
+      guiSession = await guiRunner.startGuiSession(event);
+      if (guiSession) {
+        sendOutput(event, `[Virtual Display] Interactive window preview live on ${guiSession.display}\n`);
+        guiRunner.setActivityCallback(() => {
+          if (typeof resetExecutionTimer === 'function') {
+            resetExecutionTimer();
+          }
+        });
+      }
+    } else {
+      sendOutput(event, '[Notice] Interactive in-workspace GUI preview requires Xvfb and x11vnc. Please run: sudo bash setup_env.sh\n');
     }
-    if (kioskManager && activeMainWindow) {
-      kioskManager.beginGuiSession(activeMainWindow);
-    }
-    const classMatch = code.match(/public\s+class\s+(\w+)/);
-    const appTitle = classMatch ? `${classMatch[1]}.java` : 'GUI Application';
-    event.sender.send('gui-opener-started', {
-      title: appTitle,
-      language: lang
-    });
-    sendOutput(event, '\n=======================================================\n');
-    sendOutput(event, `  [Dedicated GUI Opener] Active: ${appTitle}\n`);
-    sendOutput(event, '  Interactive window is launched on your desktop screen.\n');
-    sendOutput(event, '  Click buttons & test controls. Click "Stop App" when done.\n');
-    sendOutput(event, '=======================================================\n\n');
   }
 
-  const extraBinds = [];
-  if (isGui) {
-    if (fs.existsSync('/tmp/.X11-unix')) extraBinds.push('/tmp/.X11-unix');
-    if (process.env.XDG_RUNTIME_DIR && fs.existsSync(process.env.XDG_RUNTIME_DIR)) {
-      extraBinds.push(process.env.XDG_RUNTIME_DIR);
-    }
-    const xauth = path.join(os.homedir(), '.Xauthority');
-    if (fs.existsSync(xauth)) extraBinds.push(xauth);
-  }
+  const extraBinds = guiSession ? ['/tmp/.X11-unix'] : [];
 
   // Create a dedicated directory for execution
   const runDir = path.join(os.tmpdir(), `exam_run_${ts}`);
@@ -486,10 +451,7 @@ except:
       const pyRunEnv = guiSession ? { ...pythonEnv, DISPLAY: guiSession.display } : pythonEnv;
       runResult = await spawnAndStream(event, pythonExecutable, ['-u', 'solution.py'], {
         cwd: runDir,
-        env: pyRunEnv,
-        isGui,
-        titleHint: 'python',
-        lang: 'python'
+        env: pyRunEnv
       }, extraBinds);
     }
 
@@ -501,11 +463,9 @@ except:
       fs.writeFileSync(javaFile, code, 'utf8');
 
       const { javacBin, javaBin } = getJavaBinaries();
-      const hostDisplay = process.env.DISPLAY || ':0';
-      const runEnv = isGui ? {
+      const runEnv = guiSession ? {
         ...process.env,
-        DISPLAY: hostDisplay,
-        WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY || 'wayland-0',
+        DISPLAY: guiSession.display,
         _JAVA_AWT_WM_NONREPARENTING: '1',
         AWT_TOOLKIT: 'sun.awt.X11.XToolkit'
       } : process.env;
@@ -514,18 +474,14 @@ except:
       const compileRes = await spawnAndStream(event, javacBin, [`${className}.java`], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
         sendOutput(event, `Running ${className}...\n`);
-        const javaArgs = isGui ? [
+        const javaArgs = guiSession ? [
           '-Dawt.useSystemAAFontSettings=on',
           '-Dswing.aatext=true',
+          '-Dsun.java2d.pmoffscreen=false',
+          '-Dsun.java2d.xrender=false',
           className
         ] : [className];
-        runResult = await spawnAndStream(event, javaBin, javaArgs, {
-          cwd: runDir,
-          env: runEnv,
-          isGui,
-          titleHint: className,
-          lang: 'java'
-        }, extraBinds);
+        runResult = await spawnAndStream(event, javaBin, javaArgs, { cwd: runDir, env: runEnv }, extraBinds);
       } else {
         runResult = compileRes;
       }
@@ -634,12 +590,7 @@ tryCatch({
 
   // Cleanup run directory recursively
   try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
-  guiDocker.stopGuiSession();
-  if (isGui && kioskManager) {
-    const win = getMainWindowInstance ? getMainWindowInstance() : null;
-    kioskManager.endGuiSession(win);
-    event.sender.send('gui-opener-stopped');
-  }
+  guiRunner.stopGuiSession(event);
   event.sender.send('code-exit', {
     exitCode: runResult.exitCode,
     generatedFiles,
@@ -649,14 +600,7 @@ tryCatch({
 }
 
 function stopCode(event) {
-  guiDocker.stopGuiSession();
-  if (kioskManager) {
-    const win = getMainWindowInstance ? getMainWindowInstance() : null;
-    kioskManager.endGuiSession(win);
-  }
-  if (event && event.sender) {
-    event.sender.send('gui-opener-stopped');
-  }
+  guiRunner.stopGuiSession(event);
   if (runningProcess) {
     try {
       if (process.platform !== 'win32') {

@@ -69,25 +69,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removePlotListeners: () => {
     ipcRenderer.removeAllListeners('plot-updated');
   },
-  onGuiOpenerStarted: (callback) => {
-    ipcRenderer.on('gui-opener-started', (event, data) => callback(data));
+  onGuiSessionStart: (callback) => {
+    ipcRenderer.on('gui-session-start', (event, data) => callback(data));
   },
-  onGuiOpenerStopped: (callback) => {
-    ipcRenderer.on('gui-opener-stopped', () => callback());
+  onGuiSessionStop: (callback) => {
+    ipcRenderer.on('gui-session-stop', () => callback());
   },
-  onGuiDockAttached: (callback) => {
-    ipcRenderer.on('gui-dock-attached', (event, data) => callback(data));
-  },
-  refocusGuiWindow: () => {
-    ipcRenderer.send('gui-docker-refocus');
-  },
-  sendGuiBounds: (bounds) => {
-    ipcRenderer.send('gui-docker-bounds', bounds);
-  },
-  removeGuiOpenerListeners: () => {
-    ipcRenderer.removeAllListeners('gui-opener-started');
-    ipcRenderer.removeAllListeners('gui-opener-stopped');
-    ipcRenderer.removeAllListeners('gui-dock-attached');
+  removeGuiListeners: () => {
+    ipcRenderer.removeAllListeners('gui-session-start');
+    ipcRenderer.removeAllListeners('gui-session-stop');
   },
   fetchTextUrl: (url) => {
     return ipcRenderer.invoke('fetch-text-url', url);

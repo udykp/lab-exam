@@ -262,20 +262,22 @@ function switchBottomTab(activeTab) {
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
   const tabDatasetBtn = el('tabDatasetBtn');
+  const tabGuiBtn = el('tabGuiBtn');
   const consoleContainer = el('terminalOutputContainer');
   const plotsContainer = el('plotsTabContainer');
   const datasetContainer = el('datasetTabContainer');
+  const guiContainer = el('guiTabContainer');
   const plotsBadge = el('plotsBadge');
   const datasetBadge = el('datasetBadge');
 
-  [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn].forEach(btn => {
+  [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn, tabGuiBtn].forEach(btn => {
     if (btn) {
       btn.classList.remove('active');
       btn.style.borderBottom = '';
       btn.style.color = '';
     }
   });
-  [consoleContainer, plotsContainer, datasetContainer].forEach(c => {
+  [consoleContainer, plotsContainer, datasetContainer, guiContainer].forEach(c => {
     if (c) c.classList.add('hidden');
   });
 
@@ -290,6 +292,13 @@ function switchBottomTab(activeTab) {
     tabDatasetBtn.classList.add('active');
     datasetContainer.classList.remove('hidden');
     if (datasetBadge) datasetBadge.style.display = 'none';
+  } else if (activeTab === 'gui' && tabGuiBtn && guiContainer) {
+    tabGuiBtn.classList.add('active');
+    guiContainer.classList.remove('hidden');
+    const canvas = el('guiCanvas');
+    if (canvas && !canvas.classList.contains('hidden')) {
+      canvas.focus();
+    }
   }
 }
 
@@ -1851,51 +1860,50 @@ if (languageSelect) {
     });
   }
 
-  // Tab Switching between Console, Plots, and Dataset
+  // Tab Switching between Console, Plots, Dataset, and GUI
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
   const tabDatasetBtn = el('tabDatasetBtn');
+  const tabGuiBtn = el('tabGuiBtn');
+  const guiDisplayBadge = el('guiDisplayBadge');
 
   if (tabConsoleBtn) tabConsoleBtn.addEventListener('click', () => switchBottomTab('console'));
   if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
+  if (tabGuiBtn) tabGuiBtn.addEventListener('click', () => switchBottomTab('gui'));
   if (tabDatasetBtn) tabDatasetBtn.addEventListener('click', () => switchBottomTab('dataset'));
 
-  // Register Dedicated Native GUI Embedded Dock Handlers
-  let isNativeGuiActive = false;
+  // Register Interactive Virtual GUI Handlers
+  let activeRfbClient = null;
 
-  const triggerGuiRefocus = () => {
-    if (window.electronAPI && window.electronAPI.refocusGuiWindow) {
-      window.electronAPI.refocusGuiWindow();
-    }
-  };
+  if (window.electronAPI && window.electronAPI.onGuiSessionStart) {
+    window.electronAPI.onGuiSessionStart((data) => {
+      console.log('[GUI Session] Starting RFB client...', data);
+      if (guiDisplayBadge) guiDisplayBadge.style.display = 'inline-block';
+      switchBottomTab('gui');
 
-  if (window.electronAPI && window.electronAPI.onGuiOpenerStarted) {
-    window.electronAPI.onGuiOpenerStarted((data) => {
-      console.log('[GUI Docker] App started:', data);
-      isNativeGuiActive = true;
-      const banner = el('guiActiveBanner');
-      const title = el('guiActiveTitle');
-      const dock = el('guiDockContainer');
-      const dockTitle = el('guiDockAppTitle');
+      const canvas = el('guiCanvas');
+      const placeholder = el('guiNoActivePlaceholder');
+      if (canvas) canvas.classList.remove('hidden');
+      if (placeholder) placeholder.classList.add('hidden');
 
-      if (banner) banner.classList.remove('hidden');
-      if (title && data && data.title) title.textContent = data.title;
-      if (dock) dock.classList.remove('hidden');
-      if (dockTitle && data && data.title) dockTitle.textContent = data.title;
+      if (activeRfbClient) {
+        try { activeRfbClient.disconnect(); } catch (_) {}
+        activeRfbClient = null;
+      }
 
-      // Report exact dock viewport bounds to Electron
-      setTimeout(() => {
-        const viewport = el('guiDockViewport');
-        if (viewport && window.electronAPI && window.electronAPI.sendGuiBounds) {
-          const rect = viewport.getBoundingClientRect();
-          window.electronAPI.sendGuiBounds({
-            x: rect.left,
-            y: rect.top,
-            width: rect.width,
-            height: rect.height
-          });
-        }
-      }, 80);
+      if (window.SecureLabRfbClient && canvas) {
+        activeRfbClient = new window.SecureLabRfbClient(canvas, {
+          wsPort: data.wsPort,
+          onReady: (w, h) => {
+            console.log(`[RFB] Stream connected: ${w}x${h}`);
+            canvas.focus();
+          },
+          onDisconnect: () => {
+            console.log('[RFB] Stream disconnected');
+          }
+        });
+        activeRfbClient.connect();
+      }
 
       const runBtn = el('runCodeBtn');
       if (runBtn) {
@@ -1904,13 +1912,17 @@ if (languageSelect) {
       }
     });
 
-    window.electronAPI.onGuiOpenerStopped(() => {
-      console.log('[GUI Docker] App stopped');
-      isNativeGuiActive = false;
-      const banner = el('guiActiveBanner');
-      if (banner) banner.classList.add('hidden');
-      const dock = el('guiDockContainer');
-      if (dock) dock.classList.add('hidden');
+    window.electronAPI.onGuiSessionStop(() => {
+      console.log('[GUI Session] Stopped');
+      if (guiDisplayBadge) guiDisplayBadge.style.display = 'none';
+      if (activeRfbClient) {
+        try { activeRfbClient.disconnect(); } catch (_) {}
+        activeRfbClient = null;
+      }
+      const canvas = el('guiCanvas');
+      const placeholder = el('guiNoActivePlaceholder');
+      if (canvas) canvas.classList.add('hidden');
+      if (placeholder) placeholder.classList.remove('hidden');
 
       const runBtn = el('runCodeBtn');
       if (runBtn) {
@@ -1919,43 +1931,6 @@ if (languageSelect) {
       }
     });
   }
-
-  const stopBannerBtn = el('guiStopBannerBtn');
-  if (stopBannerBtn) {
-    stopBannerBtn.addEventListener('click', () => {
-      if (window.electronAPI && window.electronAPI.stopCode) {
-        window.electronAPI.stopCode();
-      }
-    });
-  }
-
-  const dockStopBtn = el('guiDockStopBtn');
-  if (dockStopBtn) {
-    dockStopBtn.addEventListener('click', () => {
-      if (window.electronAPI && window.electronAPI.stopCode) {
-        window.electronAPI.stopCode();
-      }
-    });
-  }
-
-  const refocusBannerBtn = el('guiRefocusBannerBtn');
-  if (refocusBannerBtn) {
-    refocusBannerBtn.addEventListener('click', triggerGuiRefocus);
-  }
-
-  const dockRefocusBtn = el('guiDockRefocusBtn');
-  if (dockRefocusBtn) {
-    dockRefocusBtn.addEventListener('click', triggerGuiRefocus);
-  }
-
-  // Auto-refocus GUI window if student clicks anywhere on the editor background during active GUI
-  document.addEventListener('click', (e) => {
-    if (!isNativeGuiActive) return;
-    if (e.target.closest('#guiActiveBanner') || e.target.closest('#guiDockContainer') || e.target.closest('#runCodeBtn')) {
-      return;
-    }
-    triggerGuiRefocus();
-  });
 
   // Dataset File Select & Search Filter
   if (el('datasetFileSelect')) {

@@ -10,6 +10,7 @@
   <script>
     require.config({ paths: { 'vs': 'vs' } });
   </script>
+  <script src="rfb-client.js"></script>
 </head>
 <body>
   <!-- Top-right Window & Theme Controls (Active on login screen) -->
@@ -30,19 +31,6 @@
       <p style="color: var(--muted); font-size: 0.95rem; margin: 0 0 24px 0;">You have been marked as <strong>FAILED</strong> in this midterm. The event has been logged on the faculty server.</p>
       <button id="violationExitBtn" type="button" style="padding: 12px 24px; font-size: 1rem; background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s ease;">Exit Application</button>
     </div>
-  </div>
-
-  <!-- Dedicated Floating Controller for Native GUI Execution -->
-  <div id="guiActiveBanner" class="hidden" style="position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 99998; background: #0f172a; border: 1.5px solid #10b981; border-radius: 9999px; padding: 8px 22px; box-shadow: 0 12px 35px rgba(0,0,0,0.7); display: flex; align-items: center; gap: 14px; backdrop-filter: blur(8px);">
-    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981;"></span>
-    <span style="font-weight: 700; font-size: 0.88rem; color: #f8fafc; letter-spacing: 0.3px;">Interactive GUI Active:</span>
-    <span id="guiActiveTitle" style="font-size: 0.84rem; color: #38bdf8; font-family: monospace; font-weight: 600;">TrafficLight</span>
-    <button id="guiRefocusBannerBtn" type="button" style="background: #3b82f6; color: #ffffff; border: none; padding: 5px 14px; border-radius: 9999px; font-weight: 700; font-size: 0.78rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);">
-      <span>🗔</span> Bring to Front
-    </button>
-    <button id="guiStopBannerBtn" type="button" style="background: #ef4444; color: #ffffff; border: none; padding: 5px 14px; border-radius: 9999px; font-weight: 700; font-size: 0.78rem; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);">
-      <span>■</span> Stop App
-    </button>
   </div>
 
   <div class="bg-shape bg-shape-a"></div>
@@ -242,29 +230,6 @@
           <!-- STANDARD CODING WORKSPACE (For Programming / Hybrid Lab Exams) -->
           <div id="codingSplitWorkspace" class="workspace-split-container">
             
-            <!-- Native GUI Embedded Dock Container -->
-            <div id="guiDockContainer" class="gui-dock-container hidden">
-              <div class="gui-dock-card">
-                <div class="gui-dock-header">
-                  <div class="gui-dock-title-group">
-                    <span class="gui-status-dot"></span>
-                    <span id="guiDockAppTitle" class="gui-dock-title">TrafficLight</span>
-                    <span class="gui-dock-tag">Native Embedded GUI</span>
-                  </div>
-                  <div class="gui-dock-actions">
-                    <button id="guiDockRefocusBtn" type="button" class="btn-dock-action" title="Bring window to front">🗔 Bring to Front</button>
-                    <button id="guiDockStopBtn" type="button" class="btn-dock-stop" title="Stop application">✖ Stop App</button>
-                  </div>
-                </div>
-                <div id="guiDockViewport" class="gui-dock-viewport">
-                  <div class="gui-dock-placeholder">
-                    <div class="gui-dock-spinner"></div>
-                    <span>Embedded GUI Active (Click controls to interact)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- LEFT COLUMN: Problem Statement & Reference Deck -->
             <aside class="workspace-left-deck">
               <div id="studentTabs" class="hidden" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
@@ -362,6 +327,7 @@
                         <button id="tabConsoleBtn" type="button" class="console-tab-btn active">Console</button>
                         <button id="tabPlotsBtn" type="button" class="console-tab-btn">Plots <span id="plotsBadge" style="background: #ef4444; color: white; border-radius: 99px; padding: 1px 6px; font-size: 0.75rem; font-weight: bold; margin-left: 4px; display: none;">0</span></button>
                         <button id="tabDatasetBtn" type="button" class="console-tab-btn">Dataset <span id="datasetBadge" style="background: #3b82f6; color: white; border-radius: 99px; padding: 1px 6px; font-size: 0.75rem; font-weight: bold; margin-left: 4px; display: none;">0</span></button>
+                        <button id="tabGuiBtn" type="button" class="console-tab-btn">GUI Window <span id="guiDisplayBadge" style="background: #10b981; color: white; border-radius: 99px; padding: 1px 6px; font-size: 0.72rem; font-weight: bold; margin-left: 4px; display: none;">LIVE</span></button>
                       </div>
                       <div style="display: flex; align-items: center; gap: 12px;">
                         <div id="executionMetricsBadge" class="hidden" style="font-size: 0.75rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.12); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(16, 185, 129, 0.25); font-family: monospace;"></div>
@@ -409,6 +375,13 @@
                           </div>
                           <div id="datasetTableContent" class="hidden"></div>
                         </div>
+                      </div>
+                      <div id="guiTabContainer" class="console-body hidden" style="flex: 1; background: #000000 !important; color: #ffffff !important; overflow: hidden; padding: 0; display: flex; align-items: center; justify-content: center; position: relative; max-height: none !important;">
+                        <div id="guiNoActivePlaceholder" style="color: #a1a1aa; text-align: center; font-family: system-ui, sans-serif; padding: 20px;">
+                          <div style="font-size: 1.1rem; margin-bottom: 6px; font-weight: bold; color: #e4e4e7;">GUI Application Window</div>
+                          <div style="font-size: 0.8rem; line-height: 1.4; max-width: 320px; margin: 0 auto;">Java Swing/AWT and Python Tkinter GUI windows will display here interactively.</div>
+                        </div>
+                        <canvas id="guiCanvas" width="800" height="600" class="hidden" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: default; outline: none;" tabindex="0"></canvas>
                       </div>
                     </div>
                   </div>
