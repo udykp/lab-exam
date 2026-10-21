@@ -48,6 +48,7 @@ APT_PKGS=(
   mysql-client
   xvfb
   x11vnc
+  openbox
 )
 
 if command -v sudo &>/dev/null; then
@@ -146,6 +147,7 @@ check_r_lib "dplyr"
 check_cmd "MySQL Client" "mysql --version"
 check_cmd "X Virtual Framebuffer (Xvfb)" "which Xvfb"
 check_cmd "X11 VNC Bridge (x11vnc)" "which x11vnc"
+check_cmd "Lightweight Window Manager (openbox)" "which openbox"
 
 echo -e "\n${GREEN}===============================================${NC}"
 echo -e "${GREEN}=== Setup Completed Successfully! ============${NC}"

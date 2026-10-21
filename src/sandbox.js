@@ -93,6 +93,18 @@ class SandboxManager {
       }
     }
 
+    // Pass display & GUI environment variables explicitly into the bwrap container
+    const envSource = opts.env || process.env;
+    if (envSource.DISPLAY) {
+      bwrapArgs.push('--setenv', 'DISPLAY', envSource.DISPLAY);
+    }
+    if (envSource._JAVA_AWT_WM_NONREPARENTING) {
+      bwrapArgs.push('--setenv', '_JAVA_AWT_WM_NONREPARENTING', envSource._JAVA_AWT_WM_NONREPARENTING);
+    }
+    if (envSource.AWT_TOOLKIT) {
+      bwrapArgs.push('--setenv', 'AWT_TOOLKIT', envSource.AWT_TOOLKIT);
+    }
+
     // Unshare process namespace so student code cannot see or signal host processes
     bwrapArgs.push(
       '--unshare-pid',

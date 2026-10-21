@@ -156,6 +156,16 @@ class SecureLabRfbClient {
         this.canvas.width = width;
         this.canvas.height = height;
 
+        // Explicitly enforce 32-bit true-color BGRX format (RFC 6143 SetPixelFormat)
+        const pixelFormatMsg = new Uint8Array([
+          0, 0, 0, 0, // type = 0 (SetPixelFormat), 3 padding bytes
+          32, 24, 0, 1, // 32 bpp, 24 depth, little-endian, true-color
+          0, 255, 0, 255, 0, 255, // redMax=255, greenMax=255, blueMax=255
+          16, 8, 0, // redShift=16, greenShift=8, blueShift=0
+          0, 0, 0 // 3 padding bytes
+        ]);
+        this.ws.send(pixelFormatMsg);
+
         // Send SetEncodings: [0] (Raw Encoding)
         const encodingsMsg = new Uint8Array([
           2, 0, // type = 2, padding = 0
@@ -196,21 +206,24 @@ class SecureLabRfbClient {
             const rh = rView.getUint16(6);
             const enc = rView.getInt32(8);
 
-            const bytesPerPixel = Math.max(1, Math.floor(this.bpp / 8));
-            const dataLen = rw * rh * bytesPerPixel;
+            if (enc === 0) {
+              const bytesPerPixel = 4;
+              const dataLen = rw * rh * bytesPerPixel;
 
-            if (this.rxBuffer.length < offset + 12 + dataLen) {
-              parsedAll = false;
-              break;
+              if (this.rxBuffer.length < offset + 12 + dataLen) {
+                parsedAll = false;
+                break;
+              }
+
+              if (rw > 0 && rh > 0) {
+                const pixelData = this.rxBuffer.subarray(offset + 12, offset + 12 + dataLen);
+                this._renderRawRect(rx, ry, rw, rh, pixelData);
+              }
+
+              offset += 12 + dataLen;
+            } else {
+              offset += 12;
             }
-
-            if (enc === 0 && rw > 0 && rh > 0) {
-              // Raw Encoding: copy pixels
-              const pixelData = this.rxBuffer.subarray(offset + 12, offset + 12 + dataLen);
-              this._renderRawRect(rx, ry, rw, rh, pixelData);
-            }
-
-            offset += 12 + dataLen;
           }
 
           if (!parsedAll) return; // Wait for complete packet
@@ -220,8 +233,20 @@ class SecureLabRfbClient {
           // Request next incremental update
           this._sendUpdateRequest(1, 0, 0, this.width, this.height);
           continue;
+        } else if (msgType === 2) {
+          // Bell: 1 byte
+          this._consumeBytes(1);
+          continue;
+        } else if (msgType === 3) {
+          // ServerCutText: 1 byte type, 3 padding, 4 bytes length, text
+          if (this.rxBuffer.length < 8) return;
+          const view = new DataView(this.rxBuffer.buffer, this.rxBuffer.byteOffset, 8);
+          const textLen = view.getUint32(4);
+          if (this.rxBuffer.length < 8 + textLen) return;
+          this._consumeBytes(8 + textLen);
+          continue;
         } else {
-          // Unknown or unhandled message type: drop leading byte to recover
+          // Unknown message type: consume 1 byte to advance
           this._consumeBytes(1);
         }
       }

@@ -1890,6 +1890,18 @@ if (languageSelect) {
         activeRfbClient.connect(`ws://127.0.0.1:${data.wsPort}`);
       }
 
+      const terminalWrapper = el('terminalResizableWrapper');
+      if (terminalWrapper && terminalWrapper.offsetHeight < 380) {
+        terminalWrapper.style.setProperty('height', '420px');
+        const editorWrapper = el('editorResizableWrapper');
+        if (editorWrapper) {
+          editorWrapper.style.setProperty('height', Math.max(160, editorWrapper.offsetHeight - 160) + 'px');
+        }
+        if (typeof monacoEditorInstance !== 'undefined' && monacoEditorInstance) {
+          monacoEditorInstance.layout();
+        }
+      }
+
       switchBottomTab('gui');
     });
 

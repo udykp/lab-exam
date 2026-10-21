@@ -221,8 +221,9 @@ function spawnAndStream(event, originalCmd, originalArgs, opts = {}, extraBinds 
   const maxOutputLength = 100000; // 100 KB limit
   let killed = false;
 
-  const INACTIVITY_TIMEOUT_MS = 60000; // 60s idle window without input/output
-  const HARD_CAP_TIMEOUT_MS = 180000;  // 180s (3 minutes) maximum safety ceiling
+  const isInteractiveGui = opts && opts.env && Boolean(opts.env.DISPLAY);
+  const INACTIVITY_TIMEOUT_MS = isInteractiveGui ? 180000 : 60000; // 3 mins idle for GUI, 60s for CLI
+  const HARD_CAP_TIMEOUT_MS = isInteractiveGui ? 600000 : 180000;  // 10 mins ceiling for GUI, 3 mins for CLI
 
   let inactivityTimerId = null;
 
@@ -354,6 +355,11 @@ async function runCode(event, { code, language, attachments }) {
       guiSession = await guiRunner.startGuiSession(event);
       if (guiSession) {
         sendOutput(event, `[Virtual Display] Interactive window preview live on ${guiSession.display}\n`);
+        guiRunner.setActivityCallback(() => {
+          if (typeof resetExecutionTimer === 'function') {
+            resetExecutionTimer();
+          }
+        });
       }
     } else {
       sendOutput(event, '[Notice] Interactive in-workspace GUI preview requires Xvfb and x11vnc. Please run: sudo bash setup_env.sh\n');
@@ -468,7 +474,13 @@ except:
       const compileRes = await spawnAndStream(event, javacBin, [`${className}.java`], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
         sendOutput(event, `Running ${className}...\n`);
-        runResult = await spawnAndStream(event, javaBin, [className], { cwd: runDir, env: runEnv }, extraBinds);
+        const javaArgs = guiSession ? [
+          '-Dsun.java2d.pmoffscreen=false',
+          '-Dsun.java2d.xrender=false',
+          '-Dawt.useSystemAAFontSettings=on',
+          className
+        ] : [className];
+        runResult = await spawnAndStream(event, javaBin, javaArgs, { cwd: runDir, env: runEnv }, extraBinds);
       } else {
         runResult = compileRes;
       }
