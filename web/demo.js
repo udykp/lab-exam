@@ -1,7 +1,6 @@
 // Helper: Get element by ID
 const el = (id) => document.getElementById(id);
 
-let switchBottomTab = null;
 let activeRfbClient = null;
 
 const escapeHtml = (str) => {
@@ -260,6 +259,46 @@ const loadDatasetsForDemoQuestion = (localFiles) => {
 
   renderDatasetTable();
 };
+
+function switchBottomTab(activeTab) {
+  const tabConsoleBtn = el('tabConsoleBtn');
+  const tabPlotsBtn = el('tabPlotsBtn');
+  const tabDatasetBtn = el('tabDatasetBtn');
+  const tabGuiBtn = el('tabGuiBtn');
+  const consoleContainer = el('terminalOutputContainer');
+  const plotsContainer = el('plotsTabContainer');
+  const datasetContainer = el('datasetTabContainer');
+  const guiContainer = el('guiTabContainer');
+  const plotsBadge = el('plotsBadge');
+  const datasetBadge = el('datasetBadge');
+
+  [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn, tabGuiBtn].forEach(btn => {
+    if (btn) {
+      btn.classList.remove('active');
+      btn.style.borderBottom = '';
+      btn.style.color = '';
+    }
+  });
+  [consoleContainer, plotsContainer, datasetContainer, guiContainer].forEach(c => {
+    if (c) c.classList.add('hidden');
+  });
+
+  if (activeTab === 'console' && tabConsoleBtn && consoleContainer) {
+    tabConsoleBtn.classList.add('active');
+    consoleContainer.classList.remove('hidden');
+  } else if (activeTab === 'plots' && tabPlotsBtn && plotsContainer) {
+    tabPlotsBtn.classList.add('active');
+    plotsContainer.classList.remove('hidden');
+    if (plotsBadge) plotsBadge.style.display = 'none';
+  } else if (activeTab === 'dataset' && tabDatasetBtn && datasetContainer) {
+    tabDatasetBtn.classList.add('active');
+    datasetContainer.classList.remove('hidden');
+    if (datasetBadge) datasetBadge.style.display = 'none';
+  } else if (activeTab === 'gui' && tabGuiBtn && guiContainer) {
+    tabGuiBtn.classList.add('active');
+    guiContainer.classList.remove('hidden');
+  }
+}
 
 // State management for local demo environment
 const state = {
@@ -1824,42 +1863,7 @@ if (languageSelect) {
   const tabPlotsBtn = el('tabPlotsBtn');
   const tabDatasetBtn = el('tabDatasetBtn');
   const tabGuiBtn = el('tabGuiBtn');
-  const consoleContainer = el('terminalOutputContainer');
-  const plotsContainer = el('plotsTabContainer');
-  const datasetContainer = el('datasetTabContainer');
-  const guiContainer = el('guiTabContainer');
-  const plotsBadge = el('plotsBadge');
-  const datasetBadge = el('datasetBadge');
   const guiDisplayBadge = el('guiDisplayBadge');
-
-  switchBottomTab = (activeTab) => {
-    [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn, tabGuiBtn].forEach(btn => {
-      if (btn) {
-        btn.classList.remove('active');
-        btn.style.borderBottom = '';
-        btn.style.color = '';
-      }
-    });
-    [consoleContainer, plotsContainer, datasetContainer, guiContainer].forEach(c => {
-      if (c) c.classList.add('hidden');
-    });
-
-    if (activeTab === 'console' && tabConsoleBtn && consoleContainer) {
-      tabConsoleBtn.classList.add('active');
-      consoleContainer.classList.remove('hidden');
-    } else if (activeTab === 'plots' && tabPlotsBtn && plotsContainer) {
-      tabPlotsBtn.classList.add('active');
-      plotsContainer.classList.remove('hidden');
-      if (plotsBadge) plotsBadge.style.display = 'none';
-    } else if (activeTab === 'dataset' && tabDatasetBtn && datasetContainer) {
-      tabDatasetBtn.classList.add('active');
-      datasetContainer.classList.remove('hidden');
-      if (datasetBadge) datasetBadge.style.display = 'none';
-    } else if (activeTab === 'gui' && tabGuiBtn && guiContainer) {
-      tabGuiBtn.classList.add('active');
-      guiContainer.classList.remove('hidden');
-    }
-  };
 
   if (tabConsoleBtn) tabConsoleBtn.addEventListener('click', () => switchBottomTab('console'));
   if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
@@ -2025,14 +2029,16 @@ if (el('runCodeBtn')) {
       plotsBadge.style.display = 'none';
     }
 
-    if (activeRfbClient) {
-      activeRfbClient.disconnect();
+    if (typeof activeRfbClient !== 'undefined' && activeRfbClient) {
+      try {
+        activeRfbClient.disconnect();
+      } catch (_) {}
       activeRfbClient = null;
     }
     if (el('tabGuiBtn')) {
       el('tabGuiBtn').classList.add('hidden');
     }
-    if (switchBottomTab) {
+    if (typeof switchBottomTab === 'function') {
       switchBottomTab('console');
     }
 
