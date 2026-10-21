@@ -46,9 +46,6 @@ APT_PKGS=(
   r-cran-e1071
   mysql-server
   mysql-client
-  xvfb
-  x11vnc
-  openbox
 )
 
 if command -v sudo &>/dev/null; then
@@ -145,9 +142,6 @@ check_cmd "R / Rscript" "Rscript --version"
 check_r_lib "ggplot2"
 check_r_lib "dplyr"
 check_cmd "MySQL Client" "mysql --version"
-check_cmd "X Virtual Framebuffer (Xvfb)" "which Xvfb"
-check_cmd "X11 VNC Bridge (x11vnc)" "which x11vnc"
-check_cmd "Lightweight Window Manager (openbox)" "which openbox"
 
 echo -e "\n${GREEN}===============================================${NC}"
 echo -e "${GREEN}=== Setup Completed Successfully! ============${NC}"

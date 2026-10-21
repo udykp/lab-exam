@@ -1,8 +1,6 @@
 // Helper: Get element by ID
 const el = (id) => document.getElementById(id);
 
-let activeRfbClient = null;
-
 const escapeHtml = (str) => {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -264,22 +262,20 @@ function switchBottomTab(activeTab) {
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
   const tabDatasetBtn = el('tabDatasetBtn');
-  const tabGuiBtn = el('tabGuiBtn');
   const consoleContainer = el('terminalOutputContainer');
   const plotsContainer = el('plotsTabContainer');
   const datasetContainer = el('datasetTabContainer');
-  const guiContainer = el('guiTabContainer');
   const plotsBadge = el('plotsBadge');
   const datasetBadge = el('datasetBadge');
 
-  [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn, tabGuiBtn].forEach(btn => {
+  [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn].forEach(btn => {
     if (btn) {
       btn.classList.remove('active');
       btn.style.borderBottom = '';
       btn.style.color = '';
     }
   });
-  [consoleContainer, plotsContainer, datasetContainer, guiContainer].forEach(c => {
+  [consoleContainer, plotsContainer, datasetContainer].forEach(c => {
     if (c) c.classList.add('hidden');
   });
 
@@ -294,9 +290,6 @@ function switchBottomTab(activeTab) {
     tabDatasetBtn.classList.add('active');
     datasetContainer.classList.remove('hidden');
     if (datasetBadge) datasetBadge.style.display = 'none';
-  } else if (activeTab === 'gui' && tabGuiBtn && guiContainer) {
-    tabGuiBtn.classList.add('active');
-    guiContainer.classList.remove('hidden');
   }
 }
 
@@ -1858,61 +1851,14 @@ if (languageSelect) {
     });
   }
 
-  // Tab Switching between Console, Plots, Dataset, and GUI Window
+  // Tab Switching between Console, Plots, and Dataset
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
   const tabDatasetBtn = el('tabDatasetBtn');
-  const tabGuiBtn = el('tabGuiBtn');
-  const guiDisplayBadge = el('guiDisplayBadge');
 
   if (tabConsoleBtn) tabConsoleBtn.addEventListener('click', () => switchBottomTab('console'));
   if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
-  if (tabGuiBtn) tabGuiBtn.addEventListener('click', () => switchBottomTab('gui'));
   if (tabDatasetBtn) tabDatasetBtn.addEventListener('click', () => switchBottomTab('dataset'));
-
-  // Register Real-time Interactive GUI Session Updates
-  if (window.electronAPI && window.electronAPI.onGuiSessionStart) {
-    window.electronAPI.onGuiSessionStart((data) => {
-      console.log('[GUI] Session started:', data);
-      if (tabGuiBtn) tabGuiBtn.classList.remove('hidden');
-      if (guiDisplayBadge && data.display) guiDisplayBadge.textContent = data.display;
-
-      const canvas = el('guiCanvas');
-      if (canvas && typeof SecureLabRfbClient !== 'undefined') {
-        if (activeRfbClient) {
-          activeRfbClient.disconnect();
-          activeRfbClient = null;
-        }
-        activeRfbClient = new SecureLabRfbClient(canvas, {
-          onConnected: () => console.log('[GUI] RFB client connected to display'),
-          onDisconnected: () => console.log('[GUI] RFB client disconnected from display')
-        });
-        activeRfbClient.connect(`ws://127.0.0.1:${data.wsPort}`);
-      }
-
-      const terminalWrapper = el('terminalResizableWrapper');
-      if (terminalWrapper && terminalWrapper.offsetHeight < 380) {
-        terminalWrapper.style.setProperty('height', '420px');
-        const editorWrapper = el('editorResizableWrapper');
-        if (editorWrapper) {
-          editorWrapper.style.setProperty('height', Math.max(160, editorWrapper.offsetHeight - 160) + 'px');
-        }
-        if (typeof monacoEditorInstance !== 'undefined' && monacoEditorInstance) {
-          monacoEditorInstance.layout();
-        }
-      }
-
-      switchBottomTab('gui');
-    });
-
-    window.electronAPI.onGuiSessionStop(() => {
-      console.log('[GUI] Session stopped');
-      if (activeRfbClient) {
-        activeRfbClient.disconnect();
-        activeRfbClient = null;
-      }
-    });
-  }
 
   // Register Dedicated Native GUI Opener Handlers
   if (window.electronAPI && window.electronAPI.onGuiOpenerStarted) {
@@ -2077,15 +2023,6 @@ if (el('runCodeBtn')) {
       plotsBadge.style.display = 'none';
     }
 
-    if (typeof activeRfbClient !== 'undefined' && activeRfbClient) {
-      try {
-        activeRfbClient.disconnect();
-      } catch (_) {}
-      activeRfbClient = null;
-    }
-    if (el('tabGuiBtn')) {
-      el('tabGuiBtn').classList.add('hidden');
-    }
     if (typeof switchBottomTab === 'function') {
       switchBottomTab('console');
     }

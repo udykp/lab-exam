@@ -69,16 +69,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removePlotListeners: () => {
     ipcRenderer.removeAllListeners('plot-updated');
   },
-  onGuiSessionStart: (callback) => {
-    ipcRenderer.on('gui-session-start', (event, data) => callback(data));
-  },
-  onGuiSessionStop: (callback) => {
-    ipcRenderer.on('gui-session-stop', (event) => callback());
-  },
-  removeGuiListeners: () => {
-    ipcRenderer.removeAllListeners('gui-session-start');
-    ipcRenderer.removeAllListeners('gui-session-stop');
-  },
   onGuiOpenerStarted: (callback) => {
     ipcRenderer.on('gui-opener-started', (event, data) => callback(data));
   },

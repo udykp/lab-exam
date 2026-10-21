@@ -3,7 +3,21 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const sandbox = require('./sandbox');
-const guiRunner = require('./gui-runner');
+
+function isGuiCode(language, code) {
+  if (!code) return false;
+  const lang = (language || '').toLowerCase();
+  if (lang.includes('java')) {
+    return /import\s+(javax\.swing|java\.awt)|extends\s+(JFrame|Frame|JPanel|Applet|JApplet|JDialog|Window)|new\s+(JFrame|Frame)/i.test(code);
+  }
+  if (lang.includes('python')) {
+    return /import\s+(tkinter|PyQt5|PyQt6|PySide2|PySide6|wx)|from\s+(tkinter|PyQt5|PyQt6|PySide2|PySide6|wx)/i.test(code);
+  }
+  if (lang === 'c' || lang === 'cpp') {
+    return /<gtk\/gtk\.h>|<QApplication>|<GL\/glut\.h>|<SDL2\/SDL\.h>/i.test(code);
+  }
+  return false;
+}
 
 const venvPath = path.join(os.homedir(), '.securemlexam-venv');
 let pythonExecutable = 'python3';
@@ -340,14 +354,13 @@ async function runCode(event, { code, language, attachments }) {
     } catch (_) {}
     runningProcess = null;
   }
-  guiRunner.stopGuiSession(event);
   cleanupTempFiles();
 
   const lang = (language || 'python').toLowerCase();
   const ts = Date.now();
   let runResult = { exitCode: 0, executionTimeMs: 0, peakMemoryMb: null };
 
-  const isGui = guiRunner.isGuiCode(lang, code);
+  const isGui = isGuiCode(lang, code);
   let activeMainWindow = null;
   if (isGui) {
     if (getMainWindowInstance) {
@@ -622,7 +635,6 @@ function stopCode(event) {
   if (event && event.sender) {
     event.sender.send('gui-opener-stopped');
   }
-  guiRunner.stopGuiSession(event);
   if (runningProcess) {
     try {
       if (process.platform !== 'win32') {
