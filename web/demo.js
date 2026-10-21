@@ -1,6 +1,9 @@
 // Helper: Get element by ID
 const el = (id) => document.getElementById(id);
 
+let switchBottomTab = null;
+let activeRfbClient = null;
+
 const escapeHtml = (str) => {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -1816,25 +1819,28 @@ if (languageSelect) {
     });
   }
 
-  // Tab Switching between Console, Plots, and Dataset
+  // Tab Switching between Console, Plots, Dataset, and GUI Window
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
   const tabDatasetBtn = el('tabDatasetBtn');
+  const tabGuiBtn = el('tabGuiBtn');
   const consoleContainer = el('terminalOutputContainer');
   const plotsContainer = el('plotsTabContainer');
   const datasetContainer = el('datasetTabContainer');
+  const guiContainer = el('guiTabContainer');
   const plotsBadge = el('plotsBadge');
   const datasetBadge = el('datasetBadge');
+  const guiDisplayBadge = el('guiDisplayBadge');
 
-  const switchBottomTab = (activeTab) => {
-    [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn].forEach(btn => {
+  switchBottomTab = (activeTab) => {
+    [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn, tabGuiBtn].forEach(btn => {
       if (btn) {
         btn.classList.remove('active');
         btn.style.borderBottom = '';
         btn.style.color = '';
       }
     });
-    [consoleContainer, plotsContainer, datasetContainer].forEach(c => {
+    [consoleContainer, plotsContainer, datasetContainer, guiContainer].forEach(c => {
       if (c) c.classList.add('hidden');
     });
 
@@ -1849,12 +1855,48 @@ if (languageSelect) {
       tabDatasetBtn.classList.add('active');
       datasetContainer.classList.remove('hidden');
       if (datasetBadge) datasetBadge.style.display = 'none';
+    } else if (activeTab === 'gui' && tabGuiBtn && guiContainer) {
+      tabGuiBtn.classList.add('active');
+      guiContainer.classList.remove('hidden');
     }
   };
 
   if (tabConsoleBtn) tabConsoleBtn.addEventListener('click', () => switchBottomTab('console'));
   if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
+  if (tabGuiBtn) tabGuiBtn.addEventListener('click', () => switchBottomTab('gui'));
   if (tabDatasetBtn) tabDatasetBtn.addEventListener('click', () => switchBottomTab('dataset'));
+
+  // Register Real-time Interactive GUI Session Updates
+  if (window.electronAPI && window.electronAPI.onGuiSessionStart) {
+    window.electronAPI.onGuiSessionStart((data) => {
+      console.log('[GUI] Session started:', data);
+      if (tabGuiBtn) tabGuiBtn.classList.remove('hidden');
+      if (guiDisplayBadge && data.display) guiDisplayBadge.textContent = data.display;
+
+      const canvas = el('guiCanvas');
+      if (canvas && typeof SecureLabRfbClient !== 'undefined') {
+        if (activeRfbClient) {
+          activeRfbClient.disconnect();
+          activeRfbClient = null;
+        }
+        activeRfbClient = new SecureLabRfbClient(canvas, {
+          onConnected: () => console.log('[GUI] RFB client connected to display'),
+          onDisconnected: () => console.log('[GUI] RFB client disconnected from display')
+        });
+        activeRfbClient.connect(`ws://127.0.0.1:${data.wsPort}`);
+      }
+
+      switchBottomTab('gui');
+    });
+
+    window.electronAPI.onGuiSessionStop(() => {
+      console.log('[GUI] Session stopped');
+      if (activeRfbClient) {
+        activeRfbClient.disconnect();
+        activeRfbClient = null;
+      }
+    });
+  }
 
   // Dataset File Select & Search Filter
   if (el('datasetFileSelect')) {
@@ -1983,6 +2025,17 @@ if (el('runCodeBtn')) {
       plotsBadge.style.display = 'none';
     }
 
+    if (activeRfbClient) {
+      activeRfbClient.disconnect();
+      activeRfbClient = null;
+    }
+    if (el('tabGuiBtn')) {
+      el('tabGuiBtn').classList.add('hidden');
+    }
+    if (switchBottomTab) {
+      switchBottomTab('console');
+    }
+
     if (term) {
       term.textContent = `Running ${lang.toUpperCase()} code...\n`;
       term.style.color = '#a3e635';
@@ -2059,8 +2112,8 @@ if (el('runCodeBtn')) {
 
       if (el('executionMetricsBadge')) {
         const timeSec = ((data.executionTimeMs || 0) / 1000).toFixed(2);
-        const memStr = data.peakMemoryMb ? ` | 💾 ${data.peakMemoryMb} MB` : '';
-        el('executionMetricsBadge').textContent = `⏱️ ${timeSec}s${memStr}`;
+        const memStr = data.peakMemoryMb ? ` | Memory: ${data.peakMemoryMb} MB` : '';
+        el('executionMetricsBadge').textContent = `${timeSec}s${memStr}`;
         el('executionMetricsBadge').style.color = data.exitCode === 0 ? '#15803d' : '#b91c1c';
         el('executionMetricsBadge').style.background = data.exitCode === 0 ? '#dcfce7' : '#fee2e2';
         el('executionMetricsBadge').style.borderColor = data.exitCode === 0 ? '#bbf7d0' : '#fecaca';

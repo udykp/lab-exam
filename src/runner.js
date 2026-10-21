@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const sandbox = require('./sandbox');
+const guiRunner = require('./gui-runner');
 
 const venvPath = path.join(os.homedir(), '.securemlexam-venv');
 let pythonExecutable = 'python3';
@@ -338,11 +339,28 @@ async function runCode(event, { code, language, attachments }) {
     } catch (_) {}
     runningProcess = null;
   }
+  guiRunner.stopGuiSession(event);
   cleanupTempFiles();
 
   const lang = (language || 'python').toLowerCase();
   const ts = Date.now();
   let runResult = { exitCode: 0, executionTimeMs: 0, peakMemoryMb: null };
+
+  const isGui = guiRunner.isGuiCode(lang, code);
+  let guiSession = null;
+  if (isGui) {
+    if (guiRunner.hasGuiTools()) {
+      sendOutput(event, '[Virtual Display] Initializing interactive in-workspace GUI session...\n');
+      guiSession = await guiRunner.startGuiSession(event);
+      if (guiSession) {
+        sendOutput(event, `[Virtual Display] Interactive window preview live on ${guiSession.display}\n`);
+      }
+    } else {
+      sendOutput(event, '[Notice] Interactive in-workspace GUI preview requires Xvfb and x11vnc. Please run: sudo bash setup_env.sh\n');
+    }
+  }
+
+  const extraBinds = guiSession ? ['/tmp/.X11-unix'] : [];
 
   // Create a dedicated directory for execution
   const runDir = path.join(os.tmpdir(), `exam_run_${ts}`);
@@ -424,10 +442,11 @@ except:
         PYTHONPATH: getUnifiedPythonPath(),
         PYTHONUNBUFFERED: '1'
       };
+      const pyRunEnv = guiSession ? { ...pythonEnv, DISPLAY: guiSession.display } : pythonEnv;
       runResult = await spawnAndStream(event, pythonExecutable, ['-u', 'solution.py'], {
         cwd: runDir,
-        env: pythonEnv
-      });
+        env: pyRunEnv
+      }, extraBinds);
     }
 
     // ── Java ────────────────────────────────────────────────────────────────
@@ -438,12 +457,13 @@ except:
       fs.writeFileSync(javaFile, code, 'utf8');
 
       const { javacBin, javaBin } = getJavaBinaries();
+      const runEnv = guiSession ? { ...process.env, DISPLAY: guiSession.display } : process.env;
 
       sendOutput(event, `Compiling ${className}.java...\n`);
-      const compileRes = await spawnAndStream(event, javacBin, [`${className}.java`], { cwd: runDir });
+      const compileRes = await spawnAndStream(event, javacBin, [`${className}.java`], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
         sendOutput(event, `Running ${className}...\n`);
-        runResult = await spawnAndStream(event, javaBin, [className], { cwd: runDir });
+        runResult = await spawnAndStream(event, javaBin, [className], { cwd: runDir, env: runEnv }, extraBinds);
       } else {
         runResult = compileRes;
       }
@@ -454,11 +474,12 @@ except:
       const cFile = path.join(runDir, `solution.c`);
       fs.writeFileSync(cFile, code, 'utf8');
 
+      const cRunEnv = guiSession ? { ...process.env, DISPLAY: guiSession.display } : process.env;
       sendOutput(event, 'Compiling C code...\n');
-      const compileRes = await spawnAndStream(event, 'gcc', ['solution.c', '-o', 'solution.out', '-lm'], { cwd: runDir });
+      const compileRes = await spawnAndStream(event, 'gcc', ['solution.c', '-o', 'solution.out', '-lm'], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        runResult = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
+        runResult = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir, env: cRunEnv }, extraBinds);
       } else {
         runResult = compileRes;
       }
@@ -469,11 +490,12 @@ except:
       const cppFile = path.join(runDir, `solution.cpp`);
       fs.writeFileSync(cppFile, code, 'utf8');
 
+      const cppRunEnv = guiSession ? { ...process.env, DISPLAY: guiSession.display } : process.env;
       sendOutput(event, 'Compiling C++ code...\n');
-      const compileRes = await spawnAndStream(event, 'g++', ['solution.cpp', '-o', 'solution.out', '-lm', '-std=c++17'], { cwd: runDir });
+      const compileRes = await spawnAndStream(event, 'g++', ['solution.cpp', '-o', 'solution.out', '-lm', '-std=c++17'], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
         sendOutput(event, 'Running...\n');
-        runResult = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir });
+        runResult = await spawnAndStream(event, 'stdbuf', ['-o0', '-e0', './solution.out'], { cwd: runDir, env: cppRunEnv }, extraBinds);
       } else {
         runResult = compileRes;
       }
@@ -550,6 +572,9 @@ tryCatch({
 
   // Cleanup run directory recursively
   try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
+  if (guiSession) {
+    guiRunner.stopGuiSession(event);
+  }
   event.sender.send('code-exit', {
     exitCode: runResult.exitCode,
     generatedFiles,
@@ -559,6 +584,7 @@ tryCatch({
 }
 
 function stopCode(event) {
+  guiRunner.stopGuiSession(event);
   if (runningProcess) {
     try {
       if (process.platform !== 'win32') {

@@ -1611,3 +1611,150 @@ code {
   font-style: italic;
   background: var(--bg-2);
 }
+
+/* ============================================================================
+   Student MCQ Option Card Styles
+   ============================================================================ */
+.mcq-option-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1.5px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.mcq-option-card:hover {
+  border-color: var(--accent-2);
+  background: rgba(37, 99, 235, 0.04);
+  transform: translateY(-1px);
+}
+
+.mcq-option-card.selected {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 16px -2px rgba(37, 99, 235, 0.25);
+}
+
+.mcq-radio-indicator {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.mcq-option-card.selected .mcq-radio-indicator {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.mcq-radio-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: all 0.15s ease;
+}
+
+.mcq-option-card.selected .mcq-radio-dot {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.mcq-letter-badge {
+  font-size: 0.95rem;
+  font-weight: 800;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--panel-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  transition: all 0.15s ease;
+}
+
+.mcq-option-card.selected .mcq-letter-badge {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.mcq-option-text {
+  flex: 1;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.mcq-option-card.selected .mcq-option-text {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ============================================================================
+   MCQ Palette Tiles
+   ============================================================================ */
+.mcq-palette-btn {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  min-height: 48px !important;
+  max-width: 48px !important;
+  max-height: 48px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  border-radius: 8px !important;
+  background: var(--bg-2) !important;
+  border: 1px solid var(--panel-border) !important;
+  color: var(--text) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  user-select: none !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.mcq-palette-btn:hover {
+  transform: translateY(-2px) !important;
+  border-color: var(--accent) !important;
+}
+
+.mcq-palette-btn.answered {
+  background: #10b981 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
+}
+
+.mcq-palette-btn.active {
+  box-shadow: 0 0 0 2px var(--accent-2), 0 4px 12px rgba(37, 99, 235, 0.35) !important;
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: #ffffff !important;
+}
+
+.mcq-palette-btn.active.answered {
+  background: #10b981 !important;
+  box-shadow: 0 0 0 3px var(--accent), 0 4px 12px rgba(16, 185, 129, 0.4) !important;
+}

@@ -189,6 +189,26 @@ const syncActiveDraftToServer = async () => {
   const q = state.questions[state.activeQuestionIndex];
   if (!q || !q.id || q.id.startsWith('demo-')) return;
 
+  if (q.type === 'mcq') {
+    const selectedOptId = state.drafts[q.id]?.selected_option_id !== undefined
+      ? state.drafts[q.id]?.selected_option_id
+      : (q.selected_option_id || null);
+    try {
+      await api('/api/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignment_id: q.id,
+          student_roll_no: state.rollNumber,
+          selected_option_id: selectedOptId,
+        }),
+      });
+    } catch (err) {
+      // Silent catch
+    }
+    return;
+  }
+
   const lang = el('languageSelect') ? el('languageSelect').value : 'python';
   const code = (lang === 'mysql') ? getMergedSqlCode(q.id) : getEditorValue();
   if (code === undefined || code === null) return;
@@ -216,15 +236,22 @@ const saveDraftSnapshot = () => {
       const q = state.questions[state.activeQuestionIndex];
       if (q) {
         if (!state.drafts[q.id]) state.drafts[q.id] = {};
-        const langEl = el('languageSelect');
-        const lang = langEl ? langEl.value : 'python';
-        state.drafts[q.id].language = lang;
-        state.drafts[q.id].code = (lang === 'mysql') ? getMergedSqlCode(q.id) : getEditorValue();
-        state.drafts[q.id].sqlCells = (state.sqlNotebook && state.sqlNotebook[q.id]) ? state.sqlNotebook[q.id] : null;
-        const termEl = el('terminalOutput');
-        if (termEl) {
-          state.drafts[q.id].terminal = termEl.textContent;
-          state.drafts[q.id].terminalColor = termEl.style.color || '#10b981';
+        if (q.type === 'mcq') {
+          state.drafts[q.id].type = 'mcq';
+          state.drafts[q.id].selected_option_id = state.drafts[q.id]?.selected_option_id !== undefined
+            ? state.drafts[q.id].selected_option_id
+            : (q.selected_option_id || null);
+        } else {
+          const langEl = el('languageSelect');
+          const lang = langEl ? langEl.value : 'python';
+          state.drafts[q.id].language = lang;
+          state.drafts[q.id].code = (lang === 'mysql') ? getMergedSqlCode(q.id) : getEditorValue();
+          state.drafts[q.id].sqlCells = (state.sqlNotebook && state.sqlNotebook[q.id]) ? state.sqlNotebook[q.id] : null;
+          const termEl = el('terminalOutput');
+          if (termEl) {
+            state.drafts[q.id].terminal = termEl.textContent;
+            state.drafts[q.id].terminalColor = termEl.style.color || '#10b981';
+          }
         }
       }
     }
@@ -573,10 +600,16 @@ const getActiveTheme = () => localStorage.getItem('labexam_theme') || 'dark';
 
 const applyTheme = (theme) => {
   document.documentElement.setAttribute('data-theme', theme);
+  if (document.body) document.body.setAttribute('data-theme', theme);
   localStorage.setItem('labexam_theme', theme);
   document.querySelectorAll('.theme-toggle-btn').forEach((btn) => {
-    btn.innerHTML = theme === 'dark' ? 'Light' : 'Dark';
-    btn.setAttribute('title', theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode');
+    if (theme === 'dark') {
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg><span>Light</span>`;
+      btn.setAttribute('title', 'Switch to Light Mode');
+    } else {
+      btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg><span>Dark</span>`;
+      btn.setAttribute('title', 'Switch to Dark Mode');
+    }
   });
   if (typeof monaco !== 'undefined' && monaco.editor) {
     monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs');
@@ -594,6 +627,7 @@ applyTheme(getActiveTheme());
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.theme-toggle-btn');
   if (btn) {
+    e.preventDefault();
     toggleTheme();
   }
 });
@@ -714,10 +748,10 @@ const renderCellOutputHtml = (output, cellId) => {
       return `
         <div class="sql-output-success" style="display: flex; align-items: center; justify-content: space-between; background: #ecfdf5; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px;">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1rem;">✅</span>
+            <span style="font-size: 0.85rem; font-weight: 700; color: #15803d;">[Success]</span>
             <span style="font-size: 0.82rem; font-weight: 600; color: #15803d;">Query executed successfully (no rows returned)</span>
           </div>
-          <span style="font-size: 0.72rem; font-family: monospace; color: #047857;">⏱️ ${output.executionTimeMs || 0}ms</span>
+          <span style="font-size: 0.72rem; font-family: monospace; color: #047857;">${output.executionTimeMs || 0}ms</span>
         </div>
       `;
     }
@@ -739,7 +773,7 @@ const renderCellOutputHtml = (output, cellId) => {
         <div class="sql-output-card" data-output-cell-id="${cellId || ''}">
           <div class="sql-output-meta">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="sql-table-tag">📊 Result Table</span>
+              <span class="sql-table-tag">Result Table</span>
               <span class="sql-row-count">${tableData.rows.length} row${tableData.rows.length === 1 ? '' : 's'}</span>
               <span class="sql-exec-time">${output.executionTimeMs || 0}ms</span>
             </div>
@@ -1086,14 +1120,14 @@ const resetSqlDatabaseAction = async () => {
 
   if (!btn.dataset.confirming) {
     btn.dataset.confirming = 'true';
-    btn.innerHTML = '⚠️ Click again to confirm wipe';
+    btn.innerHTML = 'Click again to confirm wipe';
     btn.style.background = '#dc2626';
     btn.style.color = '#ffffff';
     btn.style.borderColor = '#b91c1c';
     clearTimeout(resetConfirmTimer);
     resetConfirmTimer = setTimeout(() => {
       btn.dataset.confirming = '';
-      btn.innerHTML = '🔄 Reset Database';
+      btn.innerHTML = 'Reset Database';
       btn.style.background = '#ffffff';
       btn.style.color = '#dc2626';
       btn.style.borderColor = '#fca5a5';
@@ -1306,11 +1340,25 @@ const saveCurrentTabState = () => {
   if (state.questions.length === 0) return;
   const q = state.questions[state.activeQuestionIndex];
   if (!q) return;
+
+  if (q.type === 'mcq') {
+    const existing = state.drafts[q.id] || {};
+    state.drafts[q.id] = {
+      ...existing,
+      type: 'mcq',
+      selected_option_id: existing.selected_option_id !== undefined ? existing.selected_option_id : (q.selected_option_id || null),
+    };
+    saveDraftSnapshot();
+    syncActiveDraftToServer();
+    return;
+  }
+
   const lang = el('languageSelect') ? el('languageSelect').value : 'python';
   const code = (lang === 'mysql') ? getMergedSqlCode(q.id) : getEditorValue();
   state.drafts[q.id] = {
     code,
     language: lang,
+    type: 'descriptive',
     sqlCells: (state.sqlNotebook && state.sqlNotebook[q.id]) ? state.sqlNotebook[q.id] : null,
     terminal: el('terminalOutput') ? el('terminalOutput').textContent : '',
     terminalColor: el('terminalOutput') ? el('terminalOutput').style.color : '#10b981',
@@ -1540,11 +1588,11 @@ const loadTabState = (index) => {
                   <span style="font-size: 0.7rem; color: var(--muted); background: var(--panel); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--panel-border); font-weight: 600;">PDF</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 5px; flex-shrink: 0;">
-                  <button type="button" class="pdf-btn pdf-split-zoom-out" title="Zoom Out">🔍-</button>
+                  <button type="button" class="pdf-btn pdf-split-zoom-out" title="Zoom Out">Zoom -</button>
                   <span class="pdf-split-zoom-label" style="font-size: 0.75rem; color: var(--muted); font-weight: 600; min-width: 38px; text-align: center;">100%</span>
-                  <button type="button" class="pdf-btn pdf-split-zoom-in" title="Zoom In">🔍+</button>
+                  <button type="button" class="pdf-btn pdf-split-zoom-in" title="Zoom In">Zoom +</button>
                   <button type="button" class="pdf-btn pdf-split-zoom-reset" title="Reset Zoom">Reset</button>
-                  <button type="button" class="pdf-btn pdf-btn-expand pdf-split-expand-btn" data-url="${fullUrl}" data-title="${cleanName}" title="Expand Document">⛶ Expand</button>
+                  <button type="button" class="pdf-btn pdf-btn-expand pdf-split-expand-btn" data-url="${fullUrl}" data-title="${cleanName}" title="Expand Document">Expand</button>
                 </div>
               </div>
               <div class="pdf-frame-wrapper no-copy-zone">
@@ -1648,35 +1696,459 @@ const loadTabState = (index) => {
   // Load tabular datasets if attached
   loadDatasetsForQuestion(q.attachmentUrls);
 
-  const draft = state.drafts[q.id] || {
-    code: '',
-    language: q.language || 'python',
-    terminal: 'Terminal ready. Write code and click Run Code.',
-    terminalColor: '#10b981',
-  };
+  const mcqSection = el('mcqSection');
+  const standardEditorSection = el('standardEditorSection');
+  const sqlNotebookSection = el('sqlNotebookSection');
+  const langSubbarLeft = el('languageSelect')?.closest('.workspace-subbar-left');
 
-  if (draft.sqlCells && Array.isArray(draft.sqlCells)) {
-    state.sqlNotebook[q.id] = draft.sqlCells;
-  }
+  const isMcq = (q.type && q.type.toLowerCase() === 'mcq') || (Array.isArray(q.options) && q.options.length > 0);
 
-  if (!draft.code || !draft.code.trim()) {
-    draft.code = BOILERPLATES[draft.language] || '';
-  }
+  if (isMcq) {
+    if (mcqSection) {
+      mcqSection.classList.remove('hidden');
+      mcqSection.style.display = 'flex';
+    }
+    if (standardEditorSection) standardEditorSection.classList.add('hidden');
+    if (sqlNotebookSection) sqlNotebookSection.classList.add('hidden');
+    if (langSubbarLeft) langSubbarLeft.style.display = 'none';
 
-  setEditorValue(draft.code);
-  if (el('languageSelect')) el('languageSelect').value = draft.language;
-  setEditorLanguage(draft.language);
-  updateLanguageWorkspace(draft.language);
+    renderMcqOptionsForStudent(q);
+  } else {
+    if (mcqSection) {
+      mcqSection.classList.add('hidden');
+      mcqSection.style.display = 'none';
+    }
+    if (langSubbarLeft) langSubbarLeft.style.display = 'flex';
 
-  if (el('terminalOutput')) {
-    el('terminalOutput').textContent = draft.terminal;
-    el('terminalOutput').style.color = draft.terminalColor;
+    const draft = state.drafts[q.id] || {
+      code: '',
+      language: q.language || 'python',
+      terminal: 'Terminal ready. Write code and click Run Code.',
+      terminalColor: '#10b981',
+    };
+
+    if (draft.sqlCells && Array.isArray(draft.sqlCells)) {
+      state.sqlNotebook[q.id] = draft.sqlCells;
+    }
+
+    if (!draft.code || !draft.code.trim()) {
+      draft.code = BOILERPLATES[draft.language] || '';
+    }
+
+    setEditorValue(draft.code);
+    if (el('languageSelect')) el('languageSelect').value = draft.language;
+    setEditorLanguage(draft.language);
+    updateLanguageWorkspace(draft.language);
+
+    if (el('terminalOutput')) {
+      el('terminalOutput').textContent = draft.terminal;
+      el('terminalOutput').style.color = draft.terminalColor;
+    }
   }
 
   document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
     btn.classList.toggle('active', idx === index);
   });
 };
+
+const isPureMcqExam = () => {
+  return state.questions && state.questions.length > 0 && state.questions.every(q => {
+    return (q.type && q.type.toLowerCase() === 'mcq') || (Array.isArray(q.options) && q.options.length > 0);
+  });
+};
+
+const updatePaletteStats = () => {
+  let answered = 0;
+  state.questions.forEach((q) => {
+    const selId = state.drafts[q.id]?.selected_option_id !== undefined
+      ? state.drafts[q.id]?.selected_option_id
+      : (q.selected_option_id || null);
+    if (selId) answered++;
+  });
+  const total = state.questions.length;
+  if (el('paletteAnsweredCount')) el('paletteAnsweredCount').textContent = answered;
+  if (el('paletteUnansweredCount')) el('paletteUnansweredCount').textContent = (total - answered);
+  if (el('mcqPaletteProgress')) el('mcqPaletteProgress').textContent = `${answered} / ${total}`;
+};
+
+const renderDedicatedPaletteGrid = () => {
+  const grid = el('mcqPaletteGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  state.questions.forEach((q, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'mcq-palette-btn';
+    btn.type = 'button';
+    btn.textContent = String(idx + 1);
+
+    const selId = state.drafts[q.id]?.selected_option_id !== undefined
+      ? state.drafts[q.id]?.selected_option_id
+      : (q.selected_option_id || null);
+
+    if (selId) btn.classList.add('answered');
+    if (idx === state.activeQuestionIndex) btn.classList.add('active');
+
+    btn.addEventListener('click', () => {
+      saveCurrentTabState();
+      loadDedicatedMcqQuestion(idx);
+    });
+
+    grid.appendChild(btn);
+  });
+
+  updatePaletteStats();
+};
+
+const loadDedicatedMcqQuestion = (index) => {
+  state.activeQuestionIndex = index;
+  const q = state.questions[index];
+  if (!q) return;
+
+  if (el('mcqCurrentQBadge')) el('mcqCurrentQBadge').textContent = `Question ${index + 1} of ${state.questions.length}`;
+  if (el('mcqCurrentMarksBadge')) el('mcqCurrentMarksBadge').textContent = `[${q.marks || 1} Mark${(q.marks || 1) === 1 ? '' : 's'}]`;
+  if (el('mcqDedicatedPrompt')) el('mcqDedicatedPrompt').textContent = q.prompt || q.question_text || '';
+
+  // Render attachments if any
+  const attachDiv = el('mcqDedicatedAttachments');
+  if (attachDiv) {
+    if (q.attachmentUrls && q.attachmentUrls.length > 0) {
+      attachDiv.innerHTML = q.attachmentUrls.map((url) => {
+        const fullUrl = url.startsWith('http') ? url : `${state.serverUrl || 'https://exams.crraoaimscs.ac.in'}${url}`;
+        return `<img src="${fullUrl}" style="max-width: 100%; max-height: 280px; border-radius: 8px; border: 1px solid var(--panel-border); object-fit: contain; cursor: zoom-in;" onclick="window.openImageLightbox('${fullUrl}')" />`;
+      }).join('');
+    } else {
+      attachDiv.innerHTML = '';
+    }
+  }
+
+  // Render options
+  const optContainer = el('mcqDedicatedOptionsContainer');
+  if (optContainer) {
+    const draft = state.drafts[q.id];
+    const currentSelectedId = (draft && draft.selected_option_id !== undefined)
+      ? draft.selected_option_id
+      : (q.selected_option_id || null);
+
+    const options = Array.isArray(q.options) ? q.options : [];
+    if (options.length === 0) {
+      optContainer.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--muted); font-style: italic;">No options available for this question.</div>`;
+    } else {
+      optContainer.innerHTML = options.map((opt, idx) => {
+        const letter = String.fromCharCode(65 + idx);
+        const isSelected = opt.id === currentSelectedId;
+        return `
+          <div class="mcq-option-card ${isSelected ? 'selected' : ''}" data-option-id="${opt.id}" role="button" tabindex="0">
+            <div class="mcq-radio-indicator">
+              <div class="mcq-radio-dot"></div>
+            </div>
+            <div class="mcq-letter-badge">${letter}</div>
+            <div class="mcq-option-text">${escapeHtml(opt.text || '')}</div>
+          </div>
+        `;
+      }).join('');
+
+      optContainer.querySelectorAll('.mcq-option-card').forEach((card) => {
+        const selectThis = async () => {
+          const optId = card.dataset.optionId;
+          optContainer.querySelectorAll('.mcq-option-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+
+          if (!state.drafts[q.id]) state.drafts[q.id] = {};
+          state.drafts[q.id].selected_option_id = optId;
+          state.drafts[q.id].type = 'mcq';
+          q.selected_option_id = optId;
+
+          saveDraftSnapshot();
+          renderDedicatedPaletteGrid();
+
+          const liveStatus = el('mcqLiveSaveStatus');
+          if (liveStatus) {
+            liveStatus.innerHTML = `<span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;"></span> Saving...`;
+            liveStatus.style.color = '#f59e0b';
+          }
+
+          if (!q.id.startsWith('demo-')) {
+            try {
+              await api('/api/submissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  assignment_id: q.id,
+                  student_roll_no: state.rollNumber,
+                  selected_option_id: optId,
+                }),
+              });
+              if (liveStatus) {
+                liveStatus.innerHTML = `<span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981;"></span> Saved`;
+                liveStatus.style.color = '#10b981';
+              }
+            } catch (err) {
+              if (liveStatus) {
+                liveStatus.innerHTML = `<span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ef4444;"></span> Saved locally`;
+                liveStatus.style.color = '#ef4444';
+              }
+            }
+          }
+        };
+
+        card.addEventListener('click', selectThis);
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectThis();
+          }
+        });
+      });
+    }
+  }
+
+  // Update Prev / Next button states
+  const prevBtn = el('mcqDedicatedPrevBtn');
+  const nextBtn = el('mcqDedicatedNextBtn');
+  if (prevBtn) prevBtn.disabled = (index === 0);
+  if (nextBtn) {
+    if (index === state.questions.length - 1) {
+      nextBtn.textContent = 'Review & Submit';
+    } else {
+      nextBtn.textContent = 'Next →';
+    }
+  }
+
+  renderDedicatedPaletteGrid();
+};
+
+let dedicatedMcqListenersInitialized = false;
+const setupDedicatedMcqListeners = () => {
+  if (dedicatedMcqListenersInitialized) return;
+  dedicatedMcqListenersInitialized = true;
+
+  el('mcqDedicatedPrevBtn')?.addEventListener('click', () => {
+    if (state.activeQuestionIndex > 0) {
+      loadDedicatedMcqQuestion(state.activeQuestionIndex - 1);
+    }
+  });
+
+  el('mcqDedicatedNextBtn')?.addEventListener('click', () => {
+    if (state.activeQuestionIndex < state.questions.length - 1) {
+      loadDedicatedMcqQuestion(state.activeQuestionIndex + 1);
+    } else {
+      // Last question reached: trigger finish confirmation
+      el('endExamBtn')?.click();
+    }
+  });
+
+  el('mcqDedicatedClearBtn')?.addEventListener('click', async () => {
+    const q = state.questions[state.activeQuestionIndex];
+    if (!q) return;
+    const optContainer = el('mcqDedicatedOptionsContainer');
+    if (optContainer) {
+      optContainer.querySelectorAll('.mcq-option-card').forEach(c => c.classList.remove('selected'));
+    }
+    if (!state.drafts[q.id]) state.drafts[q.id] = {};
+    state.drafts[q.id].selected_option_id = null;
+    q.selected_option_id = null;
+    saveDraftSnapshot();
+    renderDedicatedPaletteGrid();
+
+    const liveStatus = el('mcqLiveSaveStatus');
+    if (liveStatus) {
+      liveStatus.innerHTML = `<span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981;"></span> Cleared`;
+      liveStatus.style.color = '#10b981';
+    }
+
+    if (!q.id.startsWith('demo-')) {
+      try {
+        await api('/api/submissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assignment_id: q.id,
+            student_roll_no: state.rollNumber,
+            selected_option_id: null,
+          }),
+        });
+      } catch (_) {}
+    }
+  });
+
+  el('mcqFinishTestBtn')?.addEventListener('click', () => {
+    el('endExamBtn')?.click();
+  });
+};
+
+const renderMcqOptionsForStudent = (q) => {
+  const container = el('mcqOptionsGroup');
+  const marksBadge = el('mcqMarksBadge');
+  const autosaveStatus = el('mcqAutosaveStatus');
+  if (!container) return;
+
+  const marks = q.marks || 1;
+  if (marksBadge) {
+    marksBadge.textContent = `[${marks} Mark${marks === 1 ? '' : 's'}]`;
+  }
+
+  const draft = state.drafts[q.id];
+  const currentSelectedId = (draft && draft.selected_option_id !== undefined)
+    ? draft.selected_option_id
+    : (q.selected_option_id || null);
+
+  const options = Array.isArray(q.options) ? q.options : [];
+
+  if (options.length === 0) {
+    container.innerHTML = `<div style="padding: 24px; text-align: center; color: var(--muted); font-style: italic;">No options available for this question.</div>`;
+    return;
+  }
+
+  container.innerHTML = options.map((opt, idx) => {
+    const letter = String.fromCharCode(65 + idx);
+    const isSelected = opt.id === currentSelectedId;
+
+    return `
+      <div class="mcq-option-card ${isSelected ? 'selected' : ''}" data-option-id="${opt.id}" role="button" tabindex="0">
+        <div class="mcq-radio-indicator">
+          <div class="mcq-radio-dot"></div>
+        </div>
+        <div class="mcq-letter-badge">${letter}</div>
+        <div class="mcq-option-text">${escapeHtml(opt.text || '')}</div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.mcq-option-card').forEach((card) => {
+    const selectThisOption = async () => {
+      const optId = card.dataset.optionId;
+      container.querySelectorAll('.mcq-option-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+
+      if (!state.drafts[q.id]) state.drafts[q.id] = {};
+      state.drafts[q.id].selected_option_id = optId;
+      state.drafts[q.id].type = 'mcq';
+      q.selected_option_id = optId;
+
+      saveDraftSnapshot();
+
+      // Realtime auto-save to backend
+      if (autosaveStatus) {
+        autosaveStatus.innerHTML = `<span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;"></span> Saving...`;
+        autosaveStatus.style.color = '#f59e0b';
+      }
+
+      if (!q.id.startsWith('demo-')) {
+        try {
+          await api('/api/submissions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              assignment_id: q.id,
+              student_roll_no: state.rollNumber,
+              selected_option_id: optId,
+            }),
+          });
+          if (autosaveStatus) {
+            autosaveStatus.innerHTML = `<span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span> Saved`;
+            autosaveStatus.style.color = '#10b981';
+          }
+        } catch (err) {
+          if (autosaveStatus) {
+            autosaveStatus.innerHTML = `<span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444;"></span> Saved locally`;
+            autosaveStatus.style.color = '#ef4444';
+          }
+        }
+      } else {
+        if (autosaveStatus) {
+          autosaveStatus.innerHTML = `<span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span> Saved`;
+          autosaveStatus.style.color = '#10b981';
+        }
+      }
+    };
+
+    card.addEventListener('click', selectThisOption);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectThisOption();
+      }
+    });
+  });
+};
+
+el('clearMcqSelectionBtn')?.addEventListener('click', async () => {
+  const q = state.questions[state.activeQuestionIndex];
+  if (!q || q.type !== 'mcq') return;
+
+  const container = el('mcqOptionsGroup');
+  if (container) {
+    container.querySelectorAll('.mcq-option-card').forEach(c => c.classList.remove('selected'));
+  }
+
+  if (!state.drafts[q.id]) state.drafts[q.id] = {};
+  state.drafts[q.id].selected_option_id = null;
+  q.selected_option_id = null;
+  saveDraftSnapshot();
+
+  const autosaveStatus = el('mcqAutosaveStatus');
+  if (autosaveStatus) {
+    autosaveStatus.innerHTML = `<span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span> Cleared`;
+    autosaveStatus.style.color = '#10b981';
+  }
+
+  if (!q.id.startsWith('demo-')) {
+    try {
+      await api('/api/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignment_id: q.id,
+          student_roll_no: state.rollNumber,
+          selected_option_id: null,
+        }),
+      });
+    } catch (err) {}
+  }
+});
+
+el('saveMcqBtn')?.addEventListener('click', async () => {
+  const q = state.questions[state.activeQuestionIndex];
+  if (!q || q.type !== 'mcq') return;
+
+  const btn = el('saveMcqBtn');
+  const originalText = btn.textContent;
+  const selectedOptId = state.drafts[q.id]?.selected_option_id !== undefined
+    ? state.drafts[q.id]?.selected_option_id
+    : (q.selected_option_id || null);
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    if (!q.id.startsWith('demo-')) {
+      await api('/api/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignment_id: q.id,
+          student_roll_no: state.rollNumber,
+          selected_option_id: selectedOptId,
+        }),
+      });
+    }
+
+    btn.textContent = 'Saved';
+    btn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+    btn.disabled = false;
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.style.background = '';
+    }, 2500);
+  } catch (err) {
+    btn.textContent = 'Save Failed';
+    btn.disabled = false;
+    setTimeout(() => {
+      btn.textContent = originalText;
+    }, 2500);
+  }
+});
 
 const saveSingleProgramLocally = async (questionIndex) => {
   if (!window.electronAPI) return null;
@@ -1783,6 +2255,9 @@ const handleExamAssignmentRevoked = (reason) => {
   localStorage.removeItem('securemlexam_attempt_id');
 
   // Hide exam UI
+  el('mcqDedicatedWorkspace')?.classList.add('hidden');
+  if (el('mcqDedicatedWorkspace')) el('mcqDedicatedWorkspace').style.display = 'none';
+  el('codingSplitWorkspace')?.classList.add('hidden');
   el('studentTabs')?.classList.add('hidden');
   el('activeQuestionCard')?.classList.add('hidden');
   el('editorArea')?.classList.add('hidden');
@@ -1842,14 +2317,22 @@ const loadStudentExam = async () => {
       if (workspaceHint) workspaceHint.textContent = `Candidate: ${state.name || 'Student'} • Roll No: ${state.rollNumber || ''}`;
 
       if (activeAtt.questions && activeAtt.questions.length > 0) {
-        state.questions = activeAtt.questions.map((q) => ({
-          id: q.id,
-          number: q.number,
-          title: `Question ${q.number}`,
-          prompt: q.question_text,
-          response: q.response || '',
-          attachmentUrls: q.attachment_urls || []
-        }));
+        state.questions = activeAtt.questions.map((q) => {
+          const opts = Array.isArray(q.options) ? q.options : [];
+          const isMcq = (q.type && q.type.toLowerCase() === 'mcq') || opts.length > 0;
+          return {
+            id: q.id,
+            number: q.number,
+            title: isMcq ? `MCQ ${q.number}` : `Question ${q.number}`,
+            prompt: q.question_text || q.prompt || q.text,
+            response: q.response || '',
+            type: isMcq ? 'mcq' : (q.type || 'descriptive'),
+            marks: q.marks,
+            options: opts,
+            selected_option_id: q.selected_option_id || null,
+            attachmentUrls: q.attachment_urls || []
+          };
+        });
       } else {
         // Fallback to filtering rawAssignments
         const matchingAssignments = rawAssignments.filter(a => a.attempt_id === activeAtt.id || a.exam_id === activeAtt.exam_id);
@@ -1857,8 +2340,12 @@ const loadStudentExam = async () => {
           id: a.id,
           number: idx + 1,
           title: `Question ${idx + 1}`,
-          prompt: a.question_text,
+          prompt: a.question_text || a.prompt || a.text,
           response: a.response || '',
+          type: a.type || 'descriptive',
+          marks: a.marks,
+          options: Array.isArray(a.options) ? a.options : [],
+          selected_option_id: a.selected_option_id || null,
           attachmentUrls: []
         }));
       }
@@ -1886,14 +2373,22 @@ const loadStudentExam = async () => {
         (a.exam_code && a.exam_code.toUpperCase() === enteredUpper)
       );
       if (matchedAssignments.length > 0) {
-        state.questions = matchedAssignments.map((a, idx) => ({
-          id: a.id,
-          number: idx + 1,
-          title: `Question ${idx + 1}`,
-          prompt: a.question_text,
-          response: a.response || '',
-          attachmentUrls: []
-        }));
+        state.questions = matchedAssignments.map((a, idx) => {
+          const opts = Array.isArray(a.options) ? a.options : [];
+          const isMcq = (a.type && a.type.toLowerCase() === 'mcq') || opts.length > 0;
+          return {
+            id: a.id,
+            number: idx + 1,
+            title: isMcq ? `MCQ ${idx + 1}` : `Question ${idx + 1}`,
+            prompt: a.question_text || a.prompt || a.text,
+            response: a.response || '',
+            type: isMcq ? 'mcq' : (a.type || 'descriptive'),
+            marks: a.marks,
+            options: opts,
+            selected_option_id: a.selected_option_id || null,
+            attachmentUrls: []
+          };
+        });
         if (workspaceTitle) workspaceTitle.textContent = 'Assigned Lab Exam';
         if (workspaceHint) workspaceHint.textContent = `Candidate: ${state.name || 'Student'} • Roll No: ${state.rollNumber || ''}`;
       } else {
@@ -1910,6 +2405,8 @@ const loadStudentExam = async () => {
       state.drafts[q.id] = {
         code: q.response || '',
         language: 'python',
+        type: q.type || 'descriptive',
+        selected_option_id: q.selected_option_id || null,
         terminal: 'Terminal ready. Write code and click Run Code.',
         terminalColor: '#10b981',
       };
@@ -1925,7 +2422,7 @@ const loadStudentExam = async () => {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.drafts) {
             Object.keys(parsed.drafts).forEach(qId => {
-              if (state.drafts[qId] && (parsed.drafts[qId].code || parsed.drafts[qId].sqlCells)) {
+              if (state.drafts[qId] && (parsed.drafts[qId].code || parsed.drafts[qId].sqlCells || parsed.drafts[qId].selected_option_id !== undefined)) {
                 state.drafts[qId] = {
                   ...state.drafts[qId],
                   ...parsed.drafts[qId]
@@ -1938,7 +2435,7 @@ const loadStudentExam = async () => {
             if (typeof parsed.activeQuestionIndex === 'number' && parsed.activeQuestionIndex < state.questions.length) {
               state.activeQuestionIndex = parsed.activeQuestionIndex;
             }
-            logEvent('🛡️ Crash Protection: Restored local unsubmitted exam session.');
+            logEvent('[Crash Protection] Restored local unsubmitted exam session.');
           }
         }
       } catch (err) {
@@ -1963,7 +2460,8 @@ const loadStudentExam = async () => {
           if (idx === state.activeQuestionIndex) btn.classList.add('active');
           
           const label = document.createElement('span');
-          label.textContent = `Program ${idx + 1}`;
+          const isMcq = (q.type && q.type.toLowerCase() === 'mcq') || (Array.isArray(q.options) && q.options.length > 0);
+          label.textContent = isMcq ? `MCQ ${idx + 1}` : `Program ${idx + 1}`;
           btn.appendChild(label);
 
           // Render cross button for dynamic tabs (i.e. if idx > 0, we can close it!)
@@ -2081,13 +2579,37 @@ const loadStudentExam = async () => {
         }
       };
 
-      renderTabs();
-      loadTabState(0);
+      const pureMcq = isPureMcqExam();
+      if (pureMcq) {
+        // Activate dedicated CBT MCQ Layout
+        el('codingSplitWorkspace')?.classList.add('hidden');
+        el('studentTabs')?.classList.add('hidden');
+        el('activeQuestionCard')?.classList.add('hidden');
+        el('editorArea')?.classList.add('hidden');
+
+        const mcqWs = el('mcqDedicatedWorkspace');
+        if (mcqWs) {
+          mcqWs.classList.remove('hidden');
+          mcqWs.style.display = 'flex';
+        }
+        setupDedicatedMcqListeners();
+        loadDedicatedMcqQuestion(state.activeQuestionIndex || 0);
+      } else {
+        // Standard Coding / Hybrid Workspace
+        const mcqWs = el('mcqDedicatedWorkspace');
+        if (mcqWs) {
+          mcqWs.classList.add('hidden');
+          mcqWs.style.display = 'none';
+        }
+        el('codingSplitWorkspace')?.classList.remove('hidden');
+        renderTabs();
+        loadTabState(state.activeQuestionIndex || 0);
+        el('activeQuestionCard')?.classList.remove('hidden');
+        el('editorArea')?.classList.remove('hidden');
+      }
     }
 
-    el('activeQuestionCard').classList.remove('hidden');
-    el('editorArea').classList.remove('hidden');
-    el('endExamBtn').classList.remove('hidden');  // show End Exam button now
+    el('endExamBtn')?.classList.remove('hidden');  // show End Exam button now
 
     // Lock window into exam mode: blocks split-screen, resize, and minimize
     if (window.electronAPI) {
@@ -2124,7 +2646,7 @@ const loadStudentExam = async () => {
     updateGridLayout();
     const errorBox = el('loginError');
     if (errorBox) {
-      errorBox.textContent = `⚠️ Failed to load exam: ${error.message}`;
+      errorBox.textContent = `Failed to load exam: ${error.message}`;
       errorBox.classList.remove('hidden');
     }
   }
@@ -2132,6 +2654,9 @@ const loadStudentExam = async () => {
 
 // Bind modal close trigger and Lightbox events
 document.addEventListener('DOMContentLoaded', async () => {
+  let switchBottomTab = null;
+  let activeRfbClient = null;
+
   if (window.electronAPI && window.electronAPI.getServerUrl) {
     try {
       state.serverUrl = await window.electronAPI.getServerUrl();
@@ -2370,7 +2895,7 @@ loginForm.addEventListener('submit', async (event) => {
   const showLoginError = (msg) => {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Sign In to Exam';
-    errorBox.textContent = '⚠️  ' + msg;
+    errorBox.textContent = msg;
     errorBox.classList.remove('hidden');
     state.token = '';
     state.name  = '';
@@ -2492,17 +3017,32 @@ const submitCurrentSolution = async (btn) => {
   btn.style.opacity = '0.7';
 
   try {
-    const lang = el('languageSelect') ? el('languageSelect').value : 'python';
-    const code = (lang === 'mysql') ? getMergedSqlCode(state.questionId) : getEditorValue();
+    const activeQ = state.questions[state.activeQuestionIndex];
+    let payload = {};
+
+    if (activeQ && activeQ.type === 'mcq') {
+      const selectedOptId = state.drafts[activeQ.id]?.selected_option_id !== undefined
+        ? state.drafts[activeQ.id]?.selected_option_id
+        : (activeQ.selected_option_id || null);
+      payload = {
+        assignment_id: activeQ.id,
+        student_roll_no: state.rollNumber,
+        selected_option_id: selectedOptId,
+      };
+    } else {
+      const lang = el('languageSelect') ? el('languageSelect').value : 'python';
+      const code = (lang === 'mysql') ? getMergedSqlCode(state.questionId) : getEditorValue();
+      payload = {
+        assignment_id: state.questionId || '',
+        student_roll_no: state.rollNumber,
+        response: code,
+      };
+    }
 
     const data = await api('/api/submissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assignment_id: state.questionId || '',
-        student_roll_no: state.rollNumber,
-        response: code,
-      }),
+      body: JSON.stringify(payload),
     });
     logEvent(data.status || 'submitted');
 
@@ -2520,7 +3060,7 @@ const submitCurrentSolution = async (btn) => {
     logEvent(error.message);
 
     // Inline error feedback — no popup
-    btn.textContent = '✖ Submit Failed';
+    btn.textContent = 'Submit Failed';
     btn.style.background = 'linear-gradient(135deg, #dc2626, #b91c1c)';
     btn.style.opacity = '1';
     btn.disabled = false;
@@ -2557,13 +3097,35 @@ const doEndExam = async () => {
     }
   }
 
-  // Auto-submit code for all programs before ending
+  // Auto-submit code for all programs / MCQs before ending
   for (const q of state.questions) {
+    // Skip submit for mock demo questions
+    if (q.id.startsWith('demo-')) continue;
+
+    if (q.type === 'mcq') {
+      const selectedOptId = state.drafts[q.id]?.selected_option_id !== undefined
+        ? state.drafts[q.id]?.selected_option_id
+        : (q.selected_option_id || null);
+      try {
+        await api('/api/submissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assignment_id: q.id,
+            student_roll_no: state.rollNumber,
+            selected_option_id: selectedOptId,
+          }),
+        });
+        logEvent(`Final submission saved for ${q.title} (MCQ).`);
+      } catch (err) {
+        logEvent(`Warning: auto-submit failed for ${q.title}: ${err.message}`);
+      }
+      continue;
+    }
+
     const draft = state.drafts[q.id];
     const lang = draft ? draft.language : (q.language || 'python');
     const codeToSubmit = (lang === 'mysql') ? (getMergedSqlCode(q.id) || (draft ? draft.code : '')) : (draft ? draft.code : '');
-    // Skip submit for mock demo questions
-    if (q.id.startsWith('demo-')) continue;
     try {
       await api('/api/submissions', {
         method: 'POST',
@@ -2715,6 +3277,17 @@ if (el('runCodeBtn')) {
       plotsBadge.style.display = 'none';
     }
 
+    if (activeRfbClient) {
+      activeRfbClient.disconnect();
+      activeRfbClient = null;
+    }
+    if (el('tabGuiBtn')) {
+      el('tabGuiBtn').classList.add('hidden');
+    }
+    if (switchBottomTab) {
+      switchBottomTab('console');
+    }
+
     if (term) {
       term.textContent = '';
       term.style.color = '#10b981';
@@ -2799,8 +3372,8 @@ if (el('runCodeBtn')) {
 
     if (el('executionMetricsBadge')) {
       const timeSec = ((data.executionTimeMs || 0) / 1000).toFixed(2);
-      const memStr = data.peakMemoryMb ? ` | 💾 ${data.peakMemoryMb} MB` : '';
-      el('executionMetricsBadge').textContent = `⏱️ ${timeSec}s${memStr}`;
+      const memStr = data.peakMemoryMb ? ` | Memory: ${data.peakMemoryMb} MB` : '';
+      el('executionMetricsBadge').textContent = `${timeSec}s${memStr}`;
       el('executionMetricsBadge').style.color = data.exitCode === 0 ? '#15803d' : '#b91c1c';
       el('executionMetricsBadge').style.background = data.exitCode === 0 ? '#dcfce7' : '#fee2e2';
       el('executionMetricsBadge').style.borderColor = data.exitCode === 0 ? '#bbf7d0' : '#fecaca';
@@ -2948,7 +3521,7 @@ window.addEventListener('contextmenu', (e) => { if (state.role === 'student') e.
 const blockClipboard = (e) => {
   if (state.role === 'student' && state.token) {
     e.preventDefault();
-    logEvent(`⚠️ Clipboard ${e.type} blocked.`);
+    logEvent(`[ExamGuard] Clipboard ${e.type} blocked.`);
   }
 };
 
@@ -2967,7 +3540,7 @@ const handleBlurViolation = (eventSource) => {
     securityArmed: state.securityArmed
   });
   if (state.role === 'student' && state.token && state.questionId && state.securityArmed) {
-    logEvent(`⚠️ [ExamGuard] Focus lost warning via ${eventSource}. Reclaiming window focus.`);
+    logEvent(`[ExamGuard] Focus lost warning via ${eventSource}. Reclaiming window focus.`);
     reportViolation('window-blur-warning', `Student attempted to switch focus via ${eventSource}.`);
   }
 };
@@ -3174,25 +3747,28 @@ window.addEventListener('load', async () => {
     });
   }
 
-  // Tab Switching between Console, Plots, and Dataset
+  // Tab Switching between Console, Plots, Dataset, and GUI Window
   const tabConsoleBtn = el('tabConsoleBtn');
   const tabPlotsBtn = el('tabPlotsBtn');
   const tabDatasetBtn = el('tabDatasetBtn');
+  const tabGuiBtn = el('tabGuiBtn');
   const consoleContainer = el('terminalOutputContainer');
   const plotsContainer = el('plotsTabContainer');
   const datasetContainer = el('datasetTabContainer');
+  const guiContainer = el('guiTabContainer');
   const plotsBadge = el('plotsBadge');
   const datasetBadge = el('datasetBadge');
+  const guiDisplayBadge = el('guiDisplayBadge');
 
-  const switchBottomTab = (activeTab) => {
-    [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn].forEach(btn => {
+  switchBottomTab = (activeTab) => {
+    [tabConsoleBtn, tabPlotsBtn, tabDatasetBtn, tabGuiBtn].forEach(btn => {
       if (btn) {
         btn.classList.remove('active');
         btn.style.borderBottom = '';
         btn.style.color = '';
       }
     });
-    [consoleContainer, plotsContainer, datasetContainer].forEach(c => {
+    [consoleContainer, plotsContainer, datasetContainer, guiContainer].forEach(c => {
       if (c) c.classList.add('hidden');
     });
 
@@ -3207,17 +3783,53 @@ window.addEventListener('load', async () => {
       tabDatasetBtn.classList.add('active');
       datasetContainer.classList.remove('hidden');
       if (datasetBadge) datasetBadge.style.display = 'none';
+    } else if (activeTab === 'gui' && tabGuiBtn && guiContainer) {
+      tabGuiBtn.classList.add('active');
+      guiContainer.classList.remove('hidden');
     }
   };
 
   if (tabConsoleBtn) tabConsoleBtn.addEventListener('click', () => switchBottomTab('console'));
   if (tabPlotsBtn) tabPlotsBtn.addEventListener('click', () => switchBottomTab('plots'));
+  if (tabGuiBtn) tabGuiBtn.addEventListener('click', () => switchBottomTab('gui'));
   if (tabDatasetBtn) {
     tabDatasetBtn.addEventListener('click', () => {
       switchBottomTab('dataset');
       const q = state.questions[state.activeQuestionIndex];
       if (currentDatasets.length === 0 && q && q.attachmentUrls && q.attachmentUrls.length > 0) {
         loadDatasetsForQuestion(q.attachmentUrls);
+      }
+    });
+  }
+
+  // Register Real-time Interactive GUI Session Updates
+  if (window.electronAPI && window.electronAPI.onGuiSessionStart) {
+    window.electronAPI.onGuiSessionStart((data) => {
+      console.log('[GUI] Session started:', data);
+      if (tabGuiBtn) tabGuiBtn.classList.remove('hidden');
+      if (guiDisplayBadge && data.display) guiDisplayBadge.textContent = data.display;
+
+      const canvas = el('guiCanvas');
+      if (canvas && typeof SecureLabRfbClient !== 'undefined') {
+        if (activeRfbClient) {
+          activeRfbClient.disconnect();
+          activeRfbClient = null;
+        }
+        activeRfbClient = new SecureLabRfbClient(canvas, {
+          onConnected: () => console.log('[GUI] RFB client connected to display'),
+          onDisconnected: () => console.log('[GUI] RFB client disconnected from display')
+        });
+        activeRfbClient.connect(`ws://127.0.0.1:${data.wsPort}`);
+      }
+
+      switchBottomTab('gui');
+    });
+
+    window.electronAPI.onGuiSessionStop(() => {
+      console.log('[GUI] Session stopped');
+      if (activeRfbClient) {
+        activeRfbClient.disconnect();
+        activeRfbClient = null;
       }
     });
   }

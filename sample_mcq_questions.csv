@@ -1,0 +1,11 @@
+number,text,marks,answer,option_a,option_b,option_c,option_d,paper
+1,"Which protocol provides connection-oriented, reliable byte-stream transmission?",2,B,"UDP (User Datagram Protocol)","TCP (Transmission Control Protocol)","IP (Internet Protocol)","ICMP (Internet Control Message Protocol)","Set A"
+2,"What is the default port number used by HTTP web traffic?",1,A,"80","443","21","8080","Set A"
+3,"Which data structure operates on a Last-In-First-Out (LIFO) basis?",1,C,"Queue","Binary Search Tree","Stack","Linked List","Set A"
+4,"What is the worst-case time complexity of QuickSort?",2,D,"O(1)","O(log n)","O(n log n)","O(n^2)","Set A"
+5,"Which of the following is an immutable data type in Python?",1,A,"tuple","list","dict","set","Set A"
+6,"In SQL, which clause is used to filter records resulting from a GROUP BY operation?",2,C,"WHERE","ORDER BY","HAVING","LIMIT","Set A"
+7,"What does the 'P' in ACID properties of relational databases stand for?",1,D,"Precision","Partition","Persistence","None - ACID stands for Atomicity, Consistency, Isolation, Durability","Set A"
+8,"Which layer in the OSI 7-layer model is responsible for routing packets across networks?",2,B,"Data Link Layer","Network Layer","Transport Layer","Session Layer","Set A"
+9,"In Python, what is the output of bool([])?",1,B,"True","False","None","IndexError","Set A"
+10,"Which searching algorithm requires the input array to be pre-sorted?",1,C,"Linear Search","Breadth-First Search","Binary Search","Depth-First Search","Set A"

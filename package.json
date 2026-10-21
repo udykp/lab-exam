@@ -30,6 +30,12 @@
       "category": "Education",
       "icon": "icon.png"
     },
+    "deb": {
+      "depends": [
+        "xvfb",
+        "x11vnc"
+      ]
+    },
     "files": [
       "**/*",
       "bin/**/*",

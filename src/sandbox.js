@@ -82,10 +82,14 @@ class SandboxManager {
       '--bind', runDir, runDir,
     ];
 
-    // Add any extra explicit read-only or read-write binds (e.g. venv)
+    // Add any extra explicit read-only or read-write binds (e.g. venv, X11 socket)
     for (const bindPath of extraBinds) {
       if (bindPath && fs.existsSync(bindPath)) {
-        bwrapArgs.push('--ro-bind', bindPath, bindPath);
+        if (bindPath.includes('.X11-unix')) {
+          bwrapArgs.push('--bind', bindPath, bindPath);
+        } else {
+          bwrapArgs.push('--ro-bind', bindPath, bindPath);
+        }
       }
     }
 

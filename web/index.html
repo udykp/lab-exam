@@ -129,7 +129,7 @@
           flex-wrap: wrap;
         ">
           <p style="margin: 0; color: #f87171; font-weight: 600; font-size: 0.95rem;">
-            ⚠️ Your code will be auto-saved and submitted. This cannot be undone.
+            Notice: Your responses will be saved and submitted. This cannot be undone.
           </p>
           <div style="display: flex; gap: 0.75rem; flex-shrink: 0;">
             <button id="endExamCancelBtn" class="secondary" type="button" style="padding: 8px 18px; font-size: 0.875rem;">Cancel</button>
@@ -138,7 +138,96 @@
         </div>
 
         <div id="studentView" class="view stack">
-          <div class="workspace-split-container">
+          
+          <!-- DEDICATED PURE MCQ EXAM WORKSPACE (Active when all questions are MCQs) -->
+          <div id="mcqDedicatedWorkspace" class="hidden" style="display: flex; gap: 20px; width: 100%; height: calc(100vh - 120px); min-height: 500px;">
+            <!-- Left Main Area: Question & Options Deck -->
+            <div class="mcq-main-deck" style="flex: 1; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 26px 32px; overflow-y: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+              
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--panel-border); padding-bottom: 14px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span id="mcqCurrentQBadge" style="background: var(--accent); color: #fff; font-weight: 800; font-size: 0.9rem; padding: 4px 12px; border-radius: 8px;">Question 1</span>
+                  <span id="mcqCurrentMarksBadge" style="font-size: 0.82rem; font-weight: 700; color: var(--accent-2); background: rgba(37, 99, 235, 0.12); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(37, 99, 235, 0.25);">1 Mark</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <span id="mcqLiveSaveStatus" style="font-size: 0.8rem; font-weight: 600; color: #10b981; display: inline-flex; align-items: center; gap: 5px;">
+                    <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981;"></span> Saved
+                  </span>
+                  <button id="mcqThemeToggleBtn" type="button" class="theme-toggle-btn" title="Toggle Light / Dark Mode" style="font-size: 0.8rem; padding: 4px 10px;">Light</button>
+                </div>
+              </div>
+
+              <!-- Question Stem / Prompt -->
+              <div id="mcqDedicatedPrompt" style="font-size: 1.15rem; font-weight: 600; color: var(--text); line-height: 1.6; margin-bottom: 24px; white-space: pre-wrap;">
+                Loading question...
+              </div>
+
+              <!-- Question Attachments (Images/PDFs if any) -->
+              <div id="mcqDedicatedAttachments" style="margin-bottom: 20px;"></div>
+
+              <!-- Multiple Choice Options List -->
+              <div id="mcqDedicatedOptionsContainer" style="display: flex; flex-direction: column; gap: 12px; flex: 1;">
+                <!-- Populated dynamically with .mcq-option-card -->
+              </div>
+
+              <!-- Bottom Action Navigation Bar -->
+              <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--panel-border); padding-top: 18px; margin-top: 24px;">
+                <div style="display: flex; gap: 10px;">
+                  <button id="mcqDedicatedClearBtn" type="button" class="btn-save" style="padding: 9px 18px; font-size: 0.86rem;">
+                    Clear Selection
+                  </button>
+                </div>
+                <div style="display: flex; gap: 12px;">
+                  <button id="mcqDedicatedPrevBtn" type="button" class="btn-secondary" style="padding: 9px 20px; font-size: 0.88rem; font-weight: 700;">
+                    &larr; Previous
+                  </button>
+                  <button id="mcqDedicatedNextBtn" type="button" class="btn-primary" style="padding: 9px 24px; font-size: 0.88rem; font-weight: 700;">
+                    Next &rarr;
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Right Sidebar: Question Palette Grid -->
+            <div class="mcq-palette-deck" style="width: 280px; flex-shrink: 0; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+              <div style="margin-bottom: 14px; display: flex; justify-content: space-between; align-items: baseline;">
+                <span style="font-size: 0.85rem; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.04em;">Questions</span>
+                <span id="mcqPaletteProgress" style="font-size: 0.82rem; font-weight: 700; color: var(--muted);">0 / 10</span>
+              </div>
+
+              <!-- Legend -->
+              <div style="display: flex; flex-direction: column; gap: 7px; font-size: 0.78rem; font-weight: 600; color: var(--muted); padding-bottom: 12px; border-bottom: 1px solid var(--panel-border); margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #10b981;"></span>
+                  <span>Answered (<span id="paletteAnsweredCount">0</span>)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--bg-2); border: 1px solid var(--panel-border);"></span>
+                  <span>Not Answered (<span id="paletteUnansweredCount">0</span>)</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 0 2px var(--accent-2);"></span>
+                  <span>Current Question</span>
+                </div>
+              </div>
+
+              <!-- Grid of Question Tiles -->
+              <div id="mcqPaletteGrid" style="display: grid; grid-template-columns: repeat(4, 48px); gap: 10px; overflow-y: auto; flex: 1; padding: 2px; align-content: start; justify-content: start;">
+                <!-- Tiles 1, 2, 3... populated dynamically -->
+              </div>
+
+              <!-- Quick Submit Shortcut -->
+              <div style="padding-top: 14px; border-top: 1px solid var(--panel-border); margin-top: 12px;">
+                <button id="mcqFinishTestBtn" type="button" class="btn-submit" style="width: 100%; padding: 10px; font-weight: 700; font-size: 0.88rem; background: #10b981 !important;">
+                  Submit Exam
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- STANDARD CODING WORKSPACE (For Programming / Hybrid Lab Exams) -->
+          <div id="codingSplitWorkspace" class="workspace-split-container">
             
             <!-- LEFT COLUMN: Problem Statement & Reference Deck -->
             <aside class="workspace-left-deck">
@@ -180,6 +269,39 @@
                   </div>
                 </div>
 
+                <!-- Interactive MCQ Section (Visible when active question is MCQ) -->
+                <div id="mcqSection" class="hidden" style="display: flex; flex-direction: column; gap: 14px; padding: 4px 0;">
+                  <div class="mcq-banner" style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 12px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <div>
+                      <div style="font-weight: 800; font-size: 0.98rem; color: var(--text); display: flex; align-items: center; gap: 8px;">
+                        <span>Multiple Choice Question</span>
+                        <span id="mcqMarksBadge" style="font-size: 0.76rem; font-weight: 700; background: rgba(37, 99, 235, 0.15); color: var(--accent-2); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(37, 99, 235, 0.3);">[1 Mark]</span>
+                      </div>
+                      <p style="margin: 4px 0 0; font-size: 0.84rem; color: var(--muted); line-height: 1.4;">
+                        Select your answer option below. Your selection is automatically saved in real time.
+                      </p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <span id="mcqAutosaveStatus" style="font-size: 0.78rem; font-weight: 600; color: #10b981; display: inline-flex; align-items: center; gap: 5px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); padding: 4px 10px; border-radius: 20px;">
+                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span> Saved
+                      </span>
+                    </div>
+                  </div>
+
+                  <div id="mcqOptionsGroup" class="mcq-options-container" style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px;">
+                    <!-- Dynamically rendered option cards -->
+                  </div>
+
+                  <div class="mcq-actions-bar" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <button id="clearMcqSelectionBtn" type="button" class="btn-save" style="font-size: 0.82rem; padding: 8px 16px;">
+                      Clear Selection
+                    </button>
+                    <button id="saveMcqBtn" type="button" class="btn-submit" style="font-size: 0.85rem; padding: 8px 22px;">
+                      Save & Confirm Answer
+                    </button>
+                  </div>
+                </div>
+
                 <!-- Standard Monolithic Code Editor Section (for Python, C, C++, Java, R) -->
                 <div id="standardEditorSection" style="display: flex; flex-direction: column; gap: 10px;">
                   <div id="editorResizableWrapper" class="editor-frame">
@@ -204,6 +326,7 @@
                         <button id="tabConsoleBtn" type="button" class="console-tab-btn active">Console</button>
                         <button id="tabPlotsBtn" type="button" class="console-tab-btn">Plots <span id="plotsBadge" style="background: #ef4444; color: white; border-radius: 99px; padding: 1px 6px; font-size: 0.75rem; font-weight: bold; margin-left: 4px; display: none;">0</span></button>
                         <button id="tabDatasetBtn" type="button" class="console-tab-btn">Dataset <span id="datasetBadge" style="background: #3b82f6; color: white; border-radius: 99px; padding: 1px 6px; font-size: 0.75rem; font-weight: bold; margin-left: 4px; display: none;">0</span></button>
+                        <button id="tabGuiBtn" type="button" class="console-tab-btn hidden">GUI Window <span id="guiLiveDot" style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; margin-left: 4px; box-shadow: 0 0 6px #10b981;"></span></button>
                       </div>
                       <div style="display: flex; align-items: center; gap: 12px;">
                         <div id="executionMetricsBadge" class="hidden" style="font-size: 0.75rem; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.12); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(16, 185, 129, 0.25); font-family: monospace;"></div>
@@ -250,6 +373,21 @@
                             <div style="font-size: 0.85rem;">Attachments such as CSV or TSV files will be rendered here as interactive tables.</div>
                           </div>
                           <div id="datasetTableContent" class="hidden"></div>
+                        </div>
+                      </div>
+                      <div id="guiTabContainer" class="console-body hidden" style="flex: 1; background: #18181b !important; color: #ffffff !important; overflow: hidden; padding: 0; display: flex; flex-direction: column; box-sizing: border-box; max-height: none !important;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 14px; background: var(--bg-2); border-bottom: 1px solid var(--panel-border); flex-wrap: wrap;">
+                          <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+                            <span style="font-size: 0.8rem; font-weight: 700; color: var(--text);">Live Interactive Window</span>
+                            <span id="guiDisplayBadge" style="font-size: 0.72rem; color: var(--muted); font-family: monospace;">:90</span>
+                          </div>
+                          <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 0.75rem; color: var(--muted); font-style: italic;">Click directly on buttons and inputs below</span>
+                          </div>
+                        </div>
+                        <div id="guiCanvasViewport" style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; background: #0b0f19; overflow: auto; position: relative;">
+                          <canvas id="guiCanvas" width="800" height="600" style="max-width: 100%; max-height: 100%; box-shadow: 0 8px 30px rgba(0,0,0,0.6); border-radius: 6px; background: #ffffff; cursor: default;"></canvas>
                         </div>
                       </div>
                     </div>
@@ -299,12 +437,12 @@
 
   <!-- Lightbox Image Viewer for Students -->
   <div id="imageLightboxModal" class="hidden" style="position: fixed; inset: 0; background: rgba(8, 17, 31, 0.96); z-index: 100002; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(12px);">
-    <button id="closeLightboxBtn" style="position: absolute; top: 20px; right: 20px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 1.25rem; color: #ffffff; cursor: pointer; padding: 8px 18px; border-radius: 10px; font-weight: bold; transition: all 0.2s; outline: none;">Close (✕)</button>
+    <button id="closeLightboxBtn" style="position: absolute; top: 20px; right: 20px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 1.1rem; color: #ffffff; cursor: pointer; padding: 8px 18px; border-radius: 10px; font-weight: bold; transition: all 0.2s; outline: none;">Close</button>
     
     <div style="position: absolute; bottom: 30px; display: flex; gap: 12px; z-index: 100003; background: rgba(24, 24, 27, 0.85); padding: 8px 16px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.1);">
-      <button id="zoomOutBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">🔍- Out</button>
-      <button id="zoomResetBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">Reset</button>
-      <button id="zoomInBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">🔍+ In</button>
+      <button id="zoomOutBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">Zoom Out (-)</button>
+      <button id="zoomResetBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">Reset</button>
+      <button id="zoomInBtn" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">Zoom In (+)</button>
     </div>
 
     <div id="lightboxImageWrapper" style="overflow: auto; max-width: 90vw; max-height: 80vh; display: flex; align-items: center; justify-content: center; border-radius: 12px; cursor: grab; background: rgba(0, 0, 0, 0.2);">
@@ -320,11 +458,11 @@
         <span style="font-size: 0.75rem; color: #94a3b8; background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); font-weight: 600;">PDF</span>
       </div>
       <div style="display: flex; align-items: center; gap: 10px;">
-        <button id="pdfModalZoomOut" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">🔍- Out</button>
+        <button id="pdfModalZoomOut" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">Zoom Out (-)</button>
         <span id="pdfModalZoomLabel" style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; min-width: 45px; text-align: center;">100%</span>
-        <button id="pdfModalZoomIn" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">🔍+ In</button>
+        <button id="pdfModalZoomIn" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">Zoom In (+)</button>
         <button id="pdfModalZoomReset" class="pdf-btn" type="button" style="padding: 6px 12px; font-size: 0.85rem;">Reset</button>
-        <button id="closePdfModalBtn" type="button" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; cursor: pointer; padding: 6px 16px; border-radius: 8px; font-weight: 700; font-size: 0.88rem; transition: all 0.2s;">Close (✕)</button>
+        <button id="closePdfModalBtn" type="button" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; cursor: pointer; padding: 6px 16px; border-radius: 8px; font-weight: 700; font-size: 0.88rem; transition: all 0.2s;">Close</button>
       </div>
     </div>
     <div id="pdfModalFrameWrapper" style="flex: 1 1 0%; min-height: 0; width: 100%; background: #18181b; border: 1px solid var(--panel-border); border-radius: 10px; overflow-y: auto; overflow-x: auto; position: relative; box-sizing: border-box;">
@@ -345,6 +483,7 @@
       delete window._monacoDefine;
     }
   </script>
+  <script src="rfb-client.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
