@@ -74,9 +74,23 @@ async function startGuiSession(event) {
       detached: true,
       stdio: 'ignore'
     });
+    activeXvfbProc.on('error', (err) => {
+      console.warn('[GuiRunner] Xvfb process error:', err.message);
+    });
 
     // Wait for Xvfb socket to establish
-    await new Promise(r => setTimeout(r, 350));
+    const socketPath = `/tmp/.X11-unix/X${displayNum}`;
+    let socketReady = false;
+    for (let i = 0; i < 20; i++) {
+      if (fs.existsSync(socketPath)) {
+        socketReady = true;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    if (!socketReady) {
+      throw new Error(`Xvfb socket failed to initialize at ${socketPath}`);
+    }
 
     // 2. Spawn x11vnc with WebSocket bridge enabled
     activeVncProc = spawn('x11vnc', [
@@ -86,10 +100,14 @@ async function startGuiSession(event) {
       '-nopw',
       '-forever',
       '-shared',
+      '-solid', '#18181b',
       '-quiet'
     ], {
       detached: true,
       stdio: 'ignore'
+    });
+    activeVncProc.on('error', (err) => {
+      console.warn('[GuiRunner] x11vnc process error:', err.message);
     });
 
     activeDisplay = displayStr;
@@ -97,7 +115,7 @@ async function startGuiSession(event) {
     activeRfbPort = rfbPort;
 
     // Allow x11vnc to bind port and connect to Xvfb
-    await new Promise(r => setTimeout(r, 450));
+    await new Promise(r => setTimeout(r, 500));
 
     if (event && event.sender) {
       event.sender.send('gui-session-start', {

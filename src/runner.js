@@ -457,7 +457,12 @@ except:
       fs.writeFileSync(javaFile, code, 'utf8');
 
       const { javacBin, javaBin } = getJavaBinaries();
-      const runEnv = guiSession ? { ...process.env, DISPLAY: guiSession.display } : process.env;
+      const runEnv = guiSession ? {
+        ...process.env,
+        DISPLAY: guiSession.display,
+        _JAVA_AWT_WM_NONREPARENTING: '1',
+        AWT_TOOLKIT: 'sun.awt.X11.XToolkit'
+      } : process.env;
 
       sendOutput(event, `Compiling ${className}.java...\n`);
       const compileRes = await spawnAndStream(event, javacBin, [`${className}.java`], { cwd: runDir }, extraBinds);

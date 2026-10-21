@@ -1423,7 +1423,7 @@ code {
 
 /* Common Workspace Button Classes */
 .btn-run {
-  background: #10b981 !important;
+  background: #10b981;
   color: #ffffff !important;
   border: none !important;
   border-radius: 8px !important;
