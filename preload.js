@@ -79,6 +79,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('gui-session-start');
     ipcRenderer.removeAllListeners('gui-session-stop');
   },
+  onGuiOpenerStarted: (callback) => {
+    ipcRenderer.on('gui-opener-started', (event, data) => callback(data));
+  },
+  onGuiOpenerStopped: (callback) => {
+    ipcRenderer.on('gui-opener-stopped', () => callback());
+  },
+  removeGuiOpenerListeners: () => {
+    ipcRenderer.removeAllListeners('gui-opener-started');
+    ipcRenderer.removeAllListeners('gui-opener-stopped');
+  },
   fetchTextUrl: (url) => {
     return ipcRenderer.invoke('fetch-text-url', url);
   },

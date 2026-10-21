@@ -1914,6 +1914,42 @@ if (languageSelect) {
     });
   }
 
+  // Register Dedicated Native GUI Opener Handlers
+  if (window.electronAPI && window.electronAPI.onGuiOpenerStarted) {
+    window.electronAPI.onGuiOpenerStarted((data) => {
+      console.log('[GUI Opener] App started:', data);
+      const banner = el('guiActiveBanner');
+      const title = el('guiActiveTitle');
+      if (banner) banner.classList.remove('hidden');
+      if (title && data && data.title) title.textContent = data.title;
+      const runBtn = el('runCodeBtn');
+      if (runBtn) {
+        runBtn.innerHTML = '<span>■</span> Stop';
+        runBtn.classList.add('btn-stop');
+      }
+    });
+
+    window.electronAPI.onGuiOpenerStopped(() => {
+      console.log('[GUI Opener] App stopped');
+      const banner = el('guiActiveBanner');
+      if (banner) banner.classList.add('hidden');
+      const runBtn = el('runCodeBtn');
+      if (runBtn) {
+        runBtn.innerHTML = '<span>▶</span> Run Code';
+        runBtn.classList.remove('btn-stop');
+      }
+    });
+  }
+
+  const stopBannerBtn = el('guiStopBannerBtn');
+  if (stopBannerBtn) {
+    stopBannerBtn.addEventListener('click', () => {
+      if (window.electronAPI && window.electronAPI.stopCode) {
+        window.electronAPI.stopCode();
+      }
+    });
+  }
+
   // Dataset File Select & Search Filter
   if (el('datasetFileSelect')) {
     el('datasetFileSelect').addEventListener('change', (e) => {

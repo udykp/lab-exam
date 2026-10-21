@@ -104,6 +104,15 @@ class SandboxManager {
     if (envSource.AWT_TOOLKIT) {
       bwrapArgs.push('--setenv', 'AWT_TOOLKIT', envSource.AWT_TOOLKIT);
     }
+    if (envSource.WAYLAND_DISPLAY) {
+      bwrapArgs.push('--setenv', 'WAYLAND_DISPLAY', envSource.WAYLAND_DISPLAY);
+    }
+    if (envSource.XDG_RUNTIME_DIR) {
+      bwrapArgs.push('--setenv', 'XDG_RUNTIME_DIR', envSource.XDG_RUNTIME_DIR);
+    }
+    if (envSource.XAUTHORITY) {
+      bwrapArgs.push('--setenv', 'XAUTHORITY', envSource.XAUTHORITY);
+    }
 
     // Unshare process namespace so student code cannot see or signal host processes
     bwrapArgs.push(

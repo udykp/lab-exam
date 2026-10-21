@@ -134,6 +134,33 @@ function restoreSuperKey() {
   });
 }
 
+let activeGuiSession = false;
+
+function beginGuiSession(mainWindow) {
+  activeGuiSession = true;
+  if (mainWindow) {
+    try {
+      mainWindow.setAlwaysOnTop(false);
+    } catch (_) {}
+  }
+  console.log('[ExamGuard] Dedicated GUI Opener: Screen-saver lock temporarily relaxed for native student GUI window.');
+}
+
+function endGuiSession(mainWindow) {
+  activeGuiSession = false;
+  if (mainWindow && mainWindow._examLocked) {
+    try {
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.focus();
+    } catch (_) {}
+  }
+  console.log('[ExamGuard] Dedicated GUI Opener: Screen-saver kiosk layer restored.');
+}
+
+function isGuiSessionActive() {
+  return activeGuiSession;
+}
+
 function lockExamWindow(mainWindow) {
   if (!mainWindow) return;
   try {
@@ -146,7 +173,9 @@ function lockExamWindow(mainWindow) {
   mainWindow.setResizable(false);
   mainWindow.setMovable(false);
   mainWindow.setMinimizable(false);
-  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (!activeGuiSession) {
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  }
   mainWindow.setFullScreen(true);
   mainWindow.setKiosk(true);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -154,7 +183,7 @@ function lockExamWindow(mainWindow) {
 
   if (focusLockInterval) clearInterval(focusLockInterval);
   focusLockInterval = setInterval(() => {
-    if (mainWindow && mainWindow._examLocked) {
+    if (mainWindow && mainWindow._examLocked && !activeGuiSession) {
       if (!mainWindow.isKiosk() || !mainWindow.isFullScreen()) {
         console.log('[ExamGuard] Enforcing fullscreen kiosk mode...');
         mainWindow.setFullScreen(true);
@@ -195,10 +224,14 @@ function setupWindowGuards(mainWindow, appDir) {
 
   mainWindow.on('blur', () => {
     if (mainWindow && mainWindow._examLocked) {
+      if (activeGuiSession) {
+        // While student GUI window is active, permit focus on the student's GUI window without penalty
+        return;
+      }
       exec("gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval \"Main.overview.hide();\"", () => {});
 
       setTimeout(() => {
-        if (mainWindow && mainWindow._examLocked && !mainWindow.isFocused()) {
+        if (mainWindow && mainWindow._examLocked && !activeGuiSession && !mainWindow.isFocused()) {
           console.log('[ExamGuard] Focus lost. Reclaiming window focus...');
           mainWindow.focus();
           mainWindow.setAlwaysOnTop(true, 'screen-saver');
@@ -206,7 +239,9 @@ function setupWindowGuards(mainWindow, appDir) {
         }
       }, 150);
     }
-    mainWindow.webContents.send('window-focus-changed', { focused: false });
+    if (!activeGuiSession) {
+      mainWindow.webContents.send('window-focus-changed', { focused: false });
+    }
   });
 
   mainWindow.on('focus', () => {
@@ -340,5 +375,8 @@ module.exports = {
   lockExamWindow,
   unlockExamWindow,
   setupWindowGuards,
-  registerKioskIPC
+  registerKioskIPC,
+  beginGuiSession,
+  endGuiSession,
+  isGuiSessionActive
 };

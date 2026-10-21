@@ -82,7 +82,7 @@ function handleExitApp() {
 }
 
 // ── Register Modular IPC Endpoints ───────────────────────────────────────────
-runner.registerRunnerIPC(ipcMain);
+runner.registerRunnerIPC(ipcMain, kiosk, () => mainWindow);
 virtualSql.registerVirtualSqlIPC(ipcMain);
 fileUtils.registerFileUtilsIPC(ipcMain, app);
 backendManager.registerBackendIPC(ipcMain);

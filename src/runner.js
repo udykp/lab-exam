@@ -348,25 +348,36 @@ async function runCode(event, { code, language, attachments }) {
   let runResult = { exitCode: 0, executionTimeMs: 0, peakMemoryMb: null };
 
   const isGui = guiRunner.isGuiCode(lang, code);
-  let guiSession = null;
+  let activeMainWindow = null;
   if (isGui) {
-    if (guiRunner.hasGuiTools()) {
-      sendOutput(event, '[Virtual Display] Initializing interactive in-workspace GUI session...\n');
-      guiSession = await guiRunner.startGuiSession(event);
-      if (guiSession) {
-        sendOutput(event, `[Virtual Display] Interactive window preview live on ${guiSession.display}\n`);
-        guiRunner.setActivityCallback(() => {
-          if (typeof resetExecutionTimer === 'function') {
-            resetExecutionTimer();
-          }
-        });
-      }
-    } else {
-      sendOutput(event, '[Notice] Interactive in-workspace GUI preview requires Xvfb and x11vnc. Please run: sudo bash setup_env.sh\n');
+    if (getMainWindowInstance) {
+      activeMainWindow = getMainWindowInstance();
     }
+    if (kioskManager && activeMainWindow) {
+      kioskManager.beginGuiSession(activeMainWindow);
+    }
+    const classMatch = code.match(/public\s+class\s+(\w+)/);
+    const appTitle = classMatch ? `${classMatch[1]}.java` : 'GUI Application';
+    event.sender.send('gui-opener-started', {
+      title: appTitle,
+      language: lang
+    });
+    sendOutput(event, '\n=======================================================\n');
+    sendOutput(event, `  [Dedicated GUI Opener] Active: ${appTitle}\n`);
+    sendOutput(event, '  Interactive window is launched on your desktop screen.\n');
+    sendOutput(event, '  Click buttons & test controls. Click "Stop App" when done.\n');
+    sendOutput(event, '=======================================================\n\n');
   }
 
-  const extraBinds = guiSession ? ['/tmp/.X11-unix'] : [];
+  const extraBinds = [];
+  if (isGui) {
+    if (fs.existsSync('/tmp/.X11-unix')) extraBinds.push('/tmp/.X11-unix');
+    if (process.env.XDG_RUNTIME_DIR && fs.existsSync(process.env.XDG_RUNTIME_DIR)) {
+      extraBinds.push(process.env.XDG_RUNTIME_DIR);
+    }
+    const xauth = path.join(os.homedir(), '.Xauthority');
+    if (fs.existsSync(xauth)) extraBinds.push(xauth);
+  }
 
   // Create a dedicated directory for execution
   const runDir = path.join(os.tmpdir(), `exam_run_${ts}`);
@@ -463,9 +474,11 @@ except:
       fs.writeFileSync(javaFile, code, 'utf8');
 
       const { javacBin, javaBin } = getJavaBinaries();
-      const runEnv = guiSession ? {
+      const hostDisplay = process.env.DISPLAY || ':0';
+      const runEnv = isGui ? {
         ...process.env,
-        DISPLAY: guiSession.display,
+        DISPLAY: hostDisplay,
+        WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY || 'wayland-0',
         _JAVA_AWT_WM_NONREPARENTING: '1',
         AWT_TOOLKIT: 'sun.awt.X11.XToolkit'
       } : process.env;
@@ -474,10 +487,9 @@ except:
       const compileRes = await spawnAndStream(event, javacBin, [`${className}.java`], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
         sendOutput(event, `Running ${className}...\n`);
-        const javaArgs = guiSession ? [
-          '-Dsun.java2d.pmoffscreen=false',
-          '-Dsun.java2d.xrender=false',
+        const javaArgs = isGui ? [
           '-Dawt.useSystemAAFontSettings=on',
+          '-Dswing.aatext=true',
           className
         ] : [className];
         runResult = await spawnAndStream(event, javaBin, javaArgs, { cwd: runDir, env: runEnv }, extraBinds);
@@ -589,8 +601,10 @@ tryCatch({
 
   // Cleanup run directory recursively
   try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
-  if (guiSession) {
-    guiRunner.stopGuiSession(event);
+  if (isGui && kioskManager) {
+    const win = getMainWindowInstance ? getMainWindowInstance() : null;
+    kioskManager.endGuiSession(win);
+    event.sender.send('gui-opener-stopped');
   }
   event.sender.send('code-exit', {
     exitCode: runResult.exitCode,
@@ -601,6 +615,13 @@ tryCatch({
 }
 
 function stopCode(event) {
+  if (kioskManager) {
+    const win = getMainWindowInstance ? getMainWindowInstance() : null;
+    kioskManager.endGuiSession(win);
+  }
+  if (event && event.sender) {
+    event.sender.send('gui-opener-stopped');
+  }
   guiRunner.stopGuiSession(event);
   if (runningProcess) {
     try {
@@ -611,7 +632,9 @@ function stopCode(event) {
       }
     } catch (_) {}
     runningProcess = null;
-    event.sender.send('code-exit', { exitCode: -1, error: 'Stopped by user.' });
+    if (event && event.sender) {
+      event.sender.send('code-exit', { exitCode: -1, error: 'Stopped by user.' });
+    }
   }
   if (typeof resetExecutionTimer === 'function') {
     resetExecutionTimer = null;
@@ -635,7 +658,12 @@ function runPipInstall(event, packages) {
   event.sender.send('pip-exit', { exitCode: 1 });
 }
 
-function registerRunnerIPC(ipcMain) {
+let kioskManager = null;
+let getMainWindowInstance = null;
+
+function registerRunnerIPC(ipcMain, kioskModule, getWin) {
+  if (kioskModule) kioskManager = kioskModule;
+  if (getWin) getMainWindowInstance = getWin;
   ipcMain.on('run-code', (event, payload) => runCode(event, payload));
   ipcMain.on('stop-code', (event) => stopCode(event));
   ipcMain.on('code-stdin', (event, text) => sendStdin(text));
