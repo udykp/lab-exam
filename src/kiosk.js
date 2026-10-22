@@ -146,9 +146,7 @@ function lockExamWindow(mainWindow) {
   mainWindow.setResizable(false);
   mainWindow.setMovable(false);
   mainWindow.setMinimizable(false);
-  if (!activeGuiSession) {
-    mainWindow.setAlwaysOnTop(true, 'screen-saver');
-  }
+  mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.setFullScreen(true);
   mainWindow.setKiosk(true);
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -156,7 +154,7 @@ function lockExamWindow(mainWindow) {
 
   if (focusLockInterval) clearInterval(focusLockInterval);
   focusLockInterval = setInterval(() => {
-    if (mainWindow && mainWindow._examLocked && !activeGuiSession) {
+    if (mainWindow && mainWindow._examLocked) {
       if (!mainWindow.isKiosk() || !mainWindow.isFullScreen()) {
         console.log('[ExamGuard] Enforcing fullscreen kiosk mode...');
         mainWindow.setFullScreen(true);
