@@ -4,8 +4,8 @@
 # reach the login screen and pick a normal desktop session. Run with sudo.
 #
 # This is the maintenance escape hatch. If the machine is sitting in an
-# autologin kiosk session and you cannot reach a terminal (VT switching is
-# locked under cage), SSH into the machine and run this script, then restart
+# autologin kiosk session and you cannot reach a terminal, SSH into the
+# machine and run this script, then restart
 # GDM. After logging into a normal "Ubuntu" session you can update the repo,
 # re-image, etc. Re-arm exam mode later with kiosk-exam-mode.sh.
 # =============================================================================

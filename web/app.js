@@ -3801,60 +3801,21 @@ window.addEventListener('load', async () => {
     });
   }
 
-  // Register Interactive Virtual GUI Handlers
-  let activeRfbClient = null;
-
+  // Register Native GUI Window Handlers
   if (window.electronAPI && window.electronAPI.onGuiSessionStart) {
-    window.electronAPI.onGuiSessionStart((data) => {
-      // Native mode: the GUI program opens as a real window on screen, so there
-      // is nothing to stream — just show a hint in the GUI tab and flip to Stop.
-      if (data && data.native) {
-        console.log('[GUI Session] Native program window opened');
-        if (guiDisplayBadge) guiDisplayBadge.style.display = 'inline-block';
-        const canvas = el('guiCanvas');
-        const placeholder = el('guiNoActivePlaceholder');
-        if (canvas) canvas.classList.add('hidden');
-        if (placeholder) {
-          placeholder.classList.remove('hidden');
-          placeholder.innerHTML = '<div style="font-size: 1.1rem; margin-bottom: 6px; font-weight: bold; color: #e4e4e7;">Program Window Open</div><div style="font-size: 0.8rem; line-height: 1.4; max-width: 340px; margin: 0 auto;">Your GUI program is running in its own window on screen. Interact with it directly. Close the window, or press Stop, to return to the exam.</div>';
-        }
-        switchBottomTab('gui');
-        const runBtn = el('runCodeBtn');
-        if (runBtn) {
-          runBtn.innerHTML = '<span>■</span> Stop';
-          runBtn.classList.add('btn-stop');
-        }
-        return;
-      }
-
-      console.log('[GUI Session] Starting RFB client...', data);
+    window.electronAPI.onGuiSessionStart(() => {
+      // GUI programs open as real windows on the locked session display, so
+      // there is nothing to stream — just show a hint in the GUI tab.
+      console.log('[GUI Session] Native program window opened');
       if (guiDisplayBadge) guiDisplayBadge.style.display = 'inline-block';
-      switchBottomTab('gui');
-
       const canvas = el('guiCanvas');
       const placeholder = el('guiNoActivePlaceholder');
-      if (canvas) canvas.classList.remove('hidden');
-      if (placeholder) placeholder.classList.add('hidden');
-
-      if (activeRfbClient) {
-        try { activeRfbClient.disconnect(); } catch (_) {}
-        activeRfbClient = null;
+      if (canvas) canvas.classList.add('hidden');
+      if (placeholder) {
+        placeholder.classList.remove('hidden');
+        placeholder.innerHTML = '<div style="font-size: 1.1rem; margin-bottom: 6px; font-weight: bold; color: #e4e4e7;">Program Window Open</div><div style="font-size: 0.8rem; line-height: 1.4; max-width: 340px; margin: 0 auto;">Your GUI program is running in its own window on screen. Interact with it directly. Close the window, or press Stop, to return to the exam.</div>';
       }
-
-      if (window.SecureLabRfbClient && canvas) {
-        activeRfbClient = new window.SecureLabRfbClient(canvas, {
-          wsPort: data.wsPort,
-          onReady: (w, h) => {
-            console.log(`[RFB] Stream connected: ${w}x${h}`);
-            canvas.focus();
-          },
-          onDisconnect: () => {
-            console.log('[RFB] Stream disconnected');
-          }
-        });
-        activeRfbClient.connect();
-      }
-
+      switchBottomTab('gui');
       const runBtn = el('runCodeBtn');
       if (runBtn) {
         runBtn.innerHTML = '<span>■</span> Stop';
@@ -3865,10 +3826,6 @@ window.addEventListener('load', async () => {
     window.electronAPI.onGuiSessionStop(() => {
       console.log('[GUI Session] Stopped');
       if (guiDisplayBadge) guiDisplayBadge.style.display = 'none';
-      if (activeRfbClient) {
-        try { activeRfbClient.disconnect(); } catch (_) {}
-        activeRfbClient = null;
-      }
       const canvas = el('guiCanvas');
       const placeholder = el('guiNoActivePlaceholder');
       if (canvas) canvas.classList.add('hidden');

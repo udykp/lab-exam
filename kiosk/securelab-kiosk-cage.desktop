@@ -1,6 +1,0 @@
-[Desktop Entry]
-Name=SecureLab Exam (Kiosk - Wayland)
-Comment=Experimental Wayland single-application exam environment (cage)
-Exec=/opt/securelab-kiosk/launch-cage.sh
-Type=Application
-DesktopNames=SecureLab

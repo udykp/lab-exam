@@ -13,38 +13,32 @@ never be fully effective:
 - `before-input-event` only fires while the app has focus — it cannot block the
   gesture/shortcut that *takes* focus away.
 - Touchpad workspace-switch gestures are handled entirely by GNOME Shell / mutter.
-  The app never receives them, so it cannot cancel them.
 - A Wayland client cannot grab global input or veto window/workspace switches.
-  The compositor owns input routing by design.
 
 So instead of fighting the compositor, we **remove GNOME Shell from the exam
-session entirely**. The exam app becomes the only client of a minimal kiosk
-compositor. There is no overview, no workspaces, no Alt+Tab target, and no
+session entirely**. The exam app becomes the only client of a minimal X11 +
+openbox session. There is no overview, no workspaces, no Alt+Tab target, and no
 gesture handler — **there is nothing to switch to.**
 
-The existing `examguard` daemon stays as a *detection/audit* layer (USB, rogue
-processes, violation log); prevention now lives at the session layer where it is
-actually enforceable.
+The `examguard` daemon stays as a *detection/audit* layer (USB, rogue processes,
+violation log); prevention lives at the session layer where it is enforceable.
 
 ## What gets installed
 
-| Session (pick at GDM gear icon)          | Backend           | Role      |
-|------------------------------------------|-------------------|-----------|
-| **SecureLab Exam (Kiosk)**               | `cage` (Wayland)  | Primary   |
-| **SecureLab Exam (Kiosk X11 fallback)**  | `openbox` (X11)   | Fallback  |
-
-Both sessions run your existing [`run.sh`](../run.sh) (git auto-update +
-`npm start`) unchanged — just wrapped so that it is the only thing on screen.
+A single GDM session, **"SecureLab Exam (Kiosk)"**, built on **Xorg + openbox**.
+Electron renders reliably on X11; the exam app owns its own fullscreen
+(`SECURELAB_KIOSK=1`) and openbox strips its decorations (matched by the
+`SecureLabExam` WM class). It runs your existing [`run.sh`](../run.sh) (git
+auto-update + `npm start`) unchanged — just as the only thing on screen.
 
 Files installed to `/opt/securelab-kiosk/`:
-- `launch-cage.sh` / `launch-x11.sh` — session entry points
-- `openbox-rc.xml` — locked Openbox config (all WM shortcuts removed)
+- `launch-x11.sh` — the session entry point
 - `kiosk.env` — records the repo path and kiosk user
+- `openbox-rc.xml` — fallback copy of the locked WM config (the launcher
+  prefers the repo copy so WM tweaks ship via `git pull`)
 - `kiosk-exam-mode.sh` / `kiosk-admin-mode.sh` — autologin toggles
 
-GDM session entries:
-- `/usr/share/wayland-sessions/securelab-kiosk-cage.desktop`
-- `/usr/share/xsessions/securelab-kiosk-x11.desktop`
+GDM session entry: `/usr/share/xsessions/securelab-kiosk-x11.desktop`.
 
 ## Install
 
@@ -58,61 +52,61 @@ sudo /opt/securelab-kiosk/kiosk-exam-mode.sh   # arm autologin
 sudo systemctl restart gdm
 ```
 
-Or install and arm autologin in one shot:
+Or in one shot: `sudo bash kiosk/install-kiosk.sh --autologin`.
 
-```bash
-sudo bash kiosk/install-kiosk.sh --autologin
-sudo systemctl restart gdm
-```
+Normally you do not run this directly — `bash setup_new_pc.sh` runs it for you as
+the last step of provisioning a machine.
 
 ## Verify before arming autologin
 
 1. `sudo systemctl restart gdm` (or reboot).
 2. At the GDM greeter, select the exam user; the default session is now
    **SecureLab Exam (Kiosk)**. Log in.
-3. The exam app should fill the screen. Confirm you **cannot**:
-   - Alt+Tab / Super / overview to anything,
-   - 3- or 4-finger swipe to another workspace,
-   - minimize, move, or close to a desktop.
-4. Exit the app normally → you should land back at the GDM greeter.
+3. The exam app should fill the screen with working mouse + keyboard. Confirm you
+   cannot Alt+Tab / swipe / minimize to anything.
+4. Exit the app → you should land back at the GDM greeter.
 
-If cage has trouble on some hardware (blank screen, GPU quirk), pick
-**SecureLab Exam (Kiosk X11 fallback)** at the gear icon instead.
+## Student GUI programs
+
+Java Swing/AWT, Python Tkinter/Qt and C/C++ GUI programs open as **real native
+windows** on top of the exam app (the exam window steps aside while they run;
+see `enterGuiMode`/`exitGuiMode` in [`src/kiosk.js`](../src/kiosk.js)). This is
+safe because the session is locked — there is nothing to switch to. Student
+windows keep a normal title bar + close button; the exam app stays bare.
 
 ## Maintenance escape hatch
 
-With autologin on, VT switching is locked under cage, so to get back to a normal
-desktop for updates/imaging:
+With autologin on, VT switching is restricted, so to get back to a normal desktop
+for updates/imaging:
 
 ```bash
-# From another machine:
 ssh adminuser@lab-pc
 sudo /opt/securelab-kiosk/kiosk-admin-mode.sh   # disables autologin
 sudo systemctl restart gdm
 # At the greeter, gear icon -> "Ubuntu"
 ```
 
-Re-arm exam mode afterwards with `sudo /opt/securelab-kiosk/kiosk-exam-mode.sh`.
+Re-arm exam mode with `sudo /opt/securelab-kiosk/kiosk-exam-mode.sh`.
 
 A backup of every file we edit is written next to it with a `.securelab.bak`
-suffix (`/etc/gdm3/custom.conf.securelab.bak`,
-`/var/lib/AccountsService/users/<user>.securelab.bak`).
+suffix (`/etc/gdm3/custom.conf.securelab.bak`, the AccountsService user file).
 
 ## Notes & limitations
 
-- **cage / openbox** come from Ubuntu's `universe` repo; the installer runs
-  `apt-get install cage openbox`.
-- The **X11 fallback cannot block Ctrl+Alt+F* VT switching** (that is an X-server
-  feature, not a WM one). For dedicated exam machines you can harden it by
-  dropping a file at `/etc/X11/xorg.conf.d/10-securelab-novt.conf` containing:
+- `xserver-xorg`, `xinit`, `openbox` and `picom` come from Ubuntu's repos; the
+  installer (and `setup_env.sh`) install them.
+- **picom is off by default.** Electron owns its own fullscreen, which paints on
+  bare X without a compositor, and picom's overlay can swallow mouse clicks. If a
+  specific machine comes up black, set `SECURELAB_USE_PICOM=1` in
+  `/opt/securelab-kiosk/kiosk.env`.
+- **Ctrl+Alt+F* VT switching** is an X-server feature openbox cannot block. For
+  dedicated exam machines you can harden it with
+  `/etc/X11/xorg.conf.d/10-securelab-novt.conf`:
   ```
   Section "ServerFlags"
       Option "DontVTSwitch" "true"
       Option "DontZap" "true"
   EndSection
   ```
-  This affects all X11 sessions on the machine, so only do it where the admin
-  logs in via the Wayland "Ubuntu" session. The primary **cage** session already
-  blocks VT switching with no extra config.
-- The in-app GUI runner (student Swing/tkinter/Qt code) uses its own private
-  `Xvfb` display, so it is unaffected by whether the outer session is cage or X11.
+  This affects all X11 sessions on the machine, so only apply it where the admin
+  logs in via the Wayland "Ubuntu" session.

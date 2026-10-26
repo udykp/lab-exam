@@ -80,7 +80,7 @@ echo "-------------------------------------------------"
 chmod +x "$APP_DIR/install_app.sh"
 "$APP_DIR/install_app.sh"
 
-# 5. Install the locked kiosk exam session (cage/Wayland + X11 fallback)
+# 5. Install the locked kiosk exam session (Xorg + openbox)
 echo "-------------------------------------------------"
 echo "Step 5: Installing locked kiosk exam session..."
 echo "-------------------------------------------------"

@@ -7,11 +7,11 @@
 # no workspaces, no Alt+Tab target and no touchpad gestures — there is simply
 # nothing to switch to. This is the real fix for "students switch away from the
 # exam window": in-app shortcut blocking cannot win that fight on Wayland, so we
-# move the lockdown down to the session/compositor layer where it is enforceable.
+# move the lockdown down to the session layer where it is enforceable.
 #
-# Two sessions are installed, both selectable at the GDM login screen:
-#   * "SecureLab Exam (Kiosk)"              -> cage (Wayland)  [PRIMARY]
-#   * "SecureLab Exam (Kiosk X11 fallback)" -> openbox (X11)   [FALLBACK]
+# Installs one GDM session, "SecureLab Exam (Kiosk)" (openbox + Xorg), and makes
+# it the kiosk user's default. Electron renders reliably on X11; the exam app
+# owns its own fullscreen and the window manager strips its decorations.
 #
 # Usage:
 #   sudo bash kiosk/install-kiosk.sh [--autologin]
@@ -58,19 +58,16 @@ echo "  Autologin  : $([ "$AUTOLOGIN" -eq 1 ] && echo yes || echo no)"
 echo "-----------------------------------------------"
 
 # 1. Dependencies -------------------------------------------------------------
-echo "[1/6] Installing kiosk packages (Xorg + picom + openbox, and cage)..."
+echo "[1/6] Installing kiosk packages (Xorg + openbox + picom)..."
 apt-get update -y || true
-# openbox+picom on Xorg is the PRIMARY path (reliable with Electron's frameless
-# window); cage/Wayland is kept as a secondary option.
-if ! apt-get install -y xserver-xorg xinit picom openbox cage; then
+if ! apt-get install -y xserver-xorg xinit picom openbox; then
   echo "  WARNING: package install failed. Install manually:"
-  echo "    sudo apt-get install xserver-xorg xinit picom openbox cage"
+  echo "    sudo apt-get install xserver-xorg xinit picom openbox"
 fi
 
 # 2. Stage launch scripts + helpers ------------------------------------------
 echo "[2/6] Installing launch scripts to $DEST ..."
 install -d -m 0755 "$DEST"
-install -m 0755 "$SCRIPT_DIR/launch-cage.sh"      "$DEST/launch-cage.sh"
 install -m 0755 "$SCRIPT_DIR/launch-x11.sh"       "$DEST/launch-x11.sh"
 install -m 0644 "$SCRIPT_DIR/openbox-rc.xml"      "$DEST/openbox-rc.xml"
 install -m 0755 "$SCRIPT_DIR/kiosk-exam-mode.sh"  "$DEST/kiosk-exam-mode.sh"
@@ -85,11 +82,12 @@ SECURELAB_KIOSK_USER="$KIOSK_USER"
 EOF
 chmod 0644 "$DEST/kiosk.env"
 
-# 4. Install the GDM session entries -----------------------------------------
-echo "[4/6] Installing GDM session entries..."
-install -d -m 0755 /usr/share/wayland-sessions /usr/share/xsessions
-install -m 0644 "$SCRIPT_DIR/securelab-kiosk-cage.desktop" /usr/share/wayland-sessions/securelab-kiosk-cage.desktop
+# 4. Install the GDM session entry -------------------------------------------
+echo "[4/6] Installing GDM session entry..."
+install -d -m 0755 /usr/share/xsessions
 install -m 0644 "$SCRIPT_DIR/securelab-kiosk-x11.desktop"  /usr/share/xsessions/securelab-kiosk-x11.desktop
+# Clean up the cage/Wayland session from machines set up by earlier versions.
+rm -f /usr/share/wayland-sessions/securelab-kiosk-cage.desktop /opt/securelab-kiosk/launch-cage.sh
 
 # 5. Make the X11 (openbox+picom) session this user's default ----------------
 echo "[5/6] Setting '$KIOSK_USER' default session to the X11 kiosk..."
@@ -120,10 +118,8 @@ fi
 echo "-----------------------------------------------"
 echo "Done. Apply with:  sudo systemctl restart gdm   (or reboot)"
 echo
-echo "At the login screen, '$KIOSK_USER' now defaults to the locked exam session."
-echo "Use the gear icon to pick another session:"
-echo "  * 'Ubuntu'                                  -> normal admin desktop"
-echo "  * 'SecureLab Exam (Kiosk - Wayland)'        -> experimental cage/Wayland"
+echo "At the login screen, '$KIOSK_USER' now defaults to 'SecureLab Exam (Kiosk)'."
+echo "Use the gear icon to pick 'Ubuntu' for the normal admin desktop."
 echo
 echo "Maintenance escape hatch:  sudo /opt/securelab-kiosk/kiosk-admin-mode.sh"
 echo "==============================================="

@@ -32,10 +32,10 @@
     },
     "deb": {
       "depends": [
-        "xvfb",
-        "x11vnc",
         "openbox",
-        "cage"
+        "xserver-xorg",
+        "xinit",
+        "picom"
       ]
     },
     "files": [
