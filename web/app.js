@@ -3806,6 +3806,27 @@ window.addEventListener('load', async () => {
 
   if (window.electronAPI && window.electronAPI.onGuiSessionStart) {
     window.electronAPI.onGuiSessionStart((data) => {
+      // Native mode: the GUI program opens as a real window on screen, so there
+      // is nothing to stream — just show a hint in the GUI tab and flip to Stop.
+      if (data && data.native) {
+        console.log('[GUI Session] Native program window opened');
+        if (guiDisplayBadge) guiDisplayBadge.style.display = 'inline-block';
+        const canvas = el('guiCanvas');
+        const placeholder = el('guiNoActivePlaceholder');
+        if (canvas) canvas.classList.add('hidden');
+        if (placeholder) {
+          placeholder.classList.remove('hidden');
+          placeholder.innerHTML = '<div style="font-size: 1.1rem; margin-bottom: 6px; font-weight: bold; color: #e4e4e7;">Program Window Open</div><div style="font-size: 0.8rem; line-height: 1.4; max-width: 340px; margin: 0 auto;">Your GUI program is running in its own window on screen. Interact with it directly. Close the window, or press Stop, to return to the exam.</div>';
+        }
+        switchBottomTab('gui');
+        const runBtn = el('runCodeBtn');
+        if (runBtn) {
+          runBtn.innerHTML = '<span>■</span> Stop';
+          runBtn.classList.add('btn-stop');
+        }
+        return;
+      }
+
       console.log('[GUI Session] Starting RFB client...', data);
       if (guiDisplayBadge) guiDisplayBadge.style.display = 'inline-block';
       switchBottomTab('gui');
@@ -3851,7 +3872,10 @@ window.addEventListener('load', async () => {
       const canvas = el('guiCanvas');
       const placeholder = el('guiNoActivePlaceholder');
       if (canvas) canvas.classList.add('hidden');
-      if (placeholder) placeholder.classList.remove('hidden');
+      if (placeholder) {
+        placeholder.classList.remove('hidden');
+        placeholder.innerHTML = '<div style="font-size: 1.1rem; margin-bottom: 6px; font-weight: bold; color: #e4e4e7;">GUI Application Window</div><div style="font-size: 0.8rem; line-height: 1.4; max-width: 340px; margin: 0 auto;">GUI programs (Java Swing/AWT, Python Tkinter, Qt) open in their own window on screen when you Run them.</div>';
+      }
 
       const runBtn = el('runCodeBtn');
       if (runBtn) {

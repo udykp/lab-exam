@@ -340,7 +340,13 @@ async function runCode(event, { code, language, attachments }) {
     } catch (_) {}
     runningProcess = null;
   }
-  guiRunner.stopGuiSession(event);
+  // Defensive: if a previous GUI run left the exam window stepped back, restore.
+  {
+    const prevWin = typeof getMainWindowInstance === 'function' ? getMainWindowInstance() : null;
+    if (prevWin && prevWin._guiRunning && kioskManager && typeof kioskManager.exitGuiMode === 'function') {
+      kioskManager.exitGuiMode(prevWin);
+    }
+  }
   cleanupTempFiles();
 
   const lang = (language || 'python').toLowerCase();
@@ -348,25 +354,27 @@ async function runCode(event, { code, language, attachments }) {
   let runResult = { exitCode: 0, executionTimeMs: 0, peakMemoryMb: null };
 
   const isGui = guiRunner.isGuiCode(lang, code);
-  let guiSession = null;
+  const mainWin = typeof getMainWindowInstance === 'function' ? getMainWindowInstance() : null;
+  let nativeGui = false;
   if (isGui) {
-    if (guiRunner.hasGuiTools()) {
-      sendOutput(event, '[Virtual Display] Initializing interactive in-workspace GUI session...\n');
-      guiSession = await guiRunner.startGuiSession(event);
-      if (guiSession) {
-        sendOutput(event, `[Virtual Display] Interactive window preview live on ${guiSession.display}\n`);
-        guiRunner.setActivityCallback(() => {
-          if (typeof resetExecutionTimer === 'function') {
-            resetExecutionTimer();
-          }
-        });
+    if (process.env.DISPLAY) {
+      // Run GUI programs as real native windows on the locked session display.
+      // The session has no other apps or window switching, so a real window is
+      // safe; the exam window steps back (enterGuiMode) so the GUI sits on top.
+      nativeGui = true;
+      sendOutput(event, '[GUI] Launching program window...\n');
+      if (kioskManager && typeof kioskManager.enterGuiMode === 'function' && mainWin) {
+        kioskManager.enterGuiMode(mainWin);
+      }
+      if (event && event.sender) {
+        event.sender.send('gui-session-start', { native: true });
       }
     } else {
-      sendOutput(event, '[Notice] Interactive in-workspace GUI preview requires Xvfb and x11vnc. Please run: sudo bash setup_env.sh\n');
+      sendOutput(event, '[Notice] GUI programs need a graphical session (no DISPLAY found).\n', 'stderr');
     }
   }
 
-  const extraBinds = guiSession ? ['/tmp/.X11-unix'] : [];
+  const extraBinds = nativeGui ? ['/tmp/.X11-unix'] : [];
 
   // Create a dedicated directory for execution
   const runDir = path.join(os.tmpdir(), `exam_run_${ts}`);
@@ -448,7 +456,8 @@ except:
         PYTHONPATH: getUnifiedPythonPath(),
         PYTHONUNBUFFERED: '1'
       };
-      const pyRunEnv = guiSession ? { ...pythonEnv, DISPLAY: guiSession.display } : pythonEnv;
+      // DISPLAY is inherited from the session, so native GUI code just works.
+      const pyRunEnv = pythonEnv;
       runResult = await spawnAndStream(event, pythonExecutable, ['-u', 'solution.py'], {
         cwd: runDir,
         env: pyRunEnv
@@ -463,9 +472,10 @@ except:
       fs.writeFileSync(javaFile, code, 'utf8');
 
       const { javacBin, javaBin } = getJavaBinaries();
-      const runEnv = guiSession ? {
+      // _JAVA_AWT_WM_NONREPARENTING helps Swing/AWT render correctly under a
+      // non-reparenting WM like openbox. DISPLAY is inherited from the session.
+      const runEnv = nativeGui ? {
         ...process.env,
-        DISPLAY: guiSession.display,
         _JAVA_AWT_WM_NONREPARENTING: '1',
         AWT_TOOLKIT: 'sun.awt.X11.XToolkit'
       } : process.env;
@@ -474,7 +484,7 @@ except:
       const compileRes = await spawnAndStream(event, javacBin, [`${className}.java`], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
         sendOutput(event, `Running ${className}...\n`);
-        const javaArgs = guiSession ? [
+        const javaArgs = nativeGui ? [
           '-Dawt.useSystemAAFontSettings=on',
           '-Dswing.aatext=true',
           '-Dsun.java2d.pmoffscreen=false',
@@ -492,7 +502,7 @@ except:
       const cFile = path.join(runDir, `solution.c`);
       fs.writeFileSync(cFile, code, 'utf8');
 
-      const cRunEnv = guiSession ? { ...process.env, DISPLAY: guiSession.display } : process.env;
+      const cRunEnv = process.env;
       sendOutput(event, 'Compiling C code...\n');
       const compileRes = await spawnAndStream(event, 'gcc', ['solution.c', '-o', 'solution.out', '-lm'], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
@@ -508,7 +518,7 @@ except:
       const cppFile = path.join(runDir, `solution.cpp`);
       fs.writeFileSync(cppFile, code, 'utf8');
 
-      const cppRunEnv = guiSession ? { ...process.env, DISPLAY: guiSession.display } : process.env;
+      const cppRunEnv = process.env;
       sendOutput(event, 'Compiling C++ code...\n');
       const compileRes = await spawnAndStream(event, 'g++', ['solution.cpp', '-o', 'solution.out', '-lm', '-std=c++17'], { cwd: runDir }, extraBinds);
       if (compileRes.exitCode === 0) {
@@ -590,7 +600,17 @@ tryCatch({
 
   // Cleanup run directory recursively
   try { fs.rmSync(runDir, { recursive: true, force: true }); } catch (_) {}
-  guiRunner.stopGuiSession(event);
+
+  // Restore the locked exam window now that the GUI program has closed.
+  if (nativeGui) {
+    if (kioskManager && typeof kioskManager.exitGuiMode === 'function' && mainWin) {
+      kioskManager.exitGuiMode(mainWin);
+    }
+    if (event && event.sender) {
+      event.sender.send('gui-session-stop');
+    }
+  }
+
   event.sender.send('code-exit', {
     exitCode: runResult.exitCode,
     generatedFiles,
@@ -600,7 +620,12 @@ tryCatch({
 }
 
 function stopCode(event) {
-  guiRunner.stopGuiSession(event);
+  // Restore the exam window if a GUI program was open, and clear the GUI tab.
+  const w = typeof getMainWindowInstance === 'function' ? getMainWindowInstance() : null;
+  if (w && w._guiRunning && kioskManager && typeof kioskManager.exitGuiMode === 'function') {
+    kioskManager.exitGuiMode(w);
+  }
+  if (event && event.sender) event.sender.send('gui-session-stop');
   if (runningProcess) {
     try {
       if (process.platform !== 'win32') {

@@ -154,7 +154,10 @@ function lockExamWindow(mainWindow) {
 
   if (focusLockInterval) clearInterval(focusLockInterval);
   focusLockInterval = setInterval(() => {
-    if (mainWindow && mainWindow._examLocked) {
+    // While a student GUI program window is open we deliberately step the exam
+    // window back (see enterGuiMode) so the GUI can sit on top and receive
+    // input — do not re-assert kiosk/fullscreen/always-on-top during that time.
+    if (mainWindow && mainWindow._examLocked && !mainWindow._guiRunning) {
       if (!mainWindow.isKiosk() || !mainWindow.isFullScreen()) {
         console.log('[ExamGuard] Enforcing fullscreen kiosk mode...');
         mainWindow.setFullScreen(true);
@@ -185,6 +188,47 @@ function unlockExamWindow(mainWindow) {
   }
 }
 
+// enterGuiMode steps the exam window back so a student's native GUI program
+// window (Java Swing, Tkinter, Qt, GTK…) can sit on top and receive mouse and
+// keyboard input. A minimal WM like openbox stacks fullscreen/always-on-top
+// windows above normal ones, so while a GUI is running we drop kiosk,
+// fullscreen and always-on-top and set a _guiRunning flag that pauses the
+// focus-reclaim and fullscreen-enforcement guards. The session itself is still
+// locked (no other apps, no switching), so this is safe.
+function enterGuiMode(mainWindow) {
+  if (!mainWindow) return;
+  mainWindow._guiRunning = true;
+  try {
+    // Leave the fullscreen/kiosk stacking layer so a normal GUI window can be
+    // raised above the exam window, but stay maximized to keep filling the
+    // screen (no jarring shrink to a small window).
+    mainWindow.setKiosk(false);
+    mainWindow.setFullScreen(false);
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.maximize();
+  } catch (err) {
+    console.warn('[ExamGuard] enterGuiMode:', err.message);
+  }
+}
+
+// exitGuiMode restores the locked kiosk state once the student's GUI program
+// has closed, and brings the exam window back to the front.
+function exitGuiMode(mainWindow) {
+  if (!mainWindow) return;
+  mainWindow._guiRunning = false;
+  try {
+    if (mainWindow._examLocked) {
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.setFullScreen(true);
+      mainWindow.setKiosk(true);
+    }
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  } catch (err) {
+    console.warn('[ExamGuard] exitGuiMode:', err.message);
+  }
+}
+
 function setupWindowGuards(mainWindow, appDir) {
   mainWindow.on('close', (e) => {
     if (mainWindow && mainWindow._examLocked) {
@@ -194,11 +238,13 @@ function setupWindowGuards(mainWindow, appDir) {
   });
 
   mainWindow.on('blur', () => {
-    if (mainWindow && mainWindow._examLocked) {
+    // Don't fight for focus while a student GUI window is open — the blur is
+    // the student clicking into their own program window.
+    if (mainWindow && mainWindow._examLocked && !mainWindow._guiRunning) {
       exec("gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method org.gnome.Shell.Eval \"Main.overview.hide();\"", () => {});
 
       setTimeout(() => {
-        if (mainWindow && mainWindow._examLocked && !mainWindow.isFocused()) {
+        if (mainWindow && mainWindow._examLocked && !mainWindow._guiRunning && !mainWindow.isFocused()) {
           console.log('[ExamGuard] Focus lost. Reclaiming window focus...');
           mainWindow.focus();
           mainWindow.setAlwaysOnTop(true, 'screen-saver');
@@ -214,7 +260,7 @@ function setupWindowGuards(mainWindow, appDir) {
   });
 
   const enforceFullscreen = () => {
-    if (mainWindow && mainWindow._examLocked) {
+    if (mainWindow && mainWindow._examLocked && !mainWindow._guiRunning) {
       const displayBounds = screen.getPrimaryDisplay().bounds;
       const windowBounds = mainWindow.getBounds();
 
@@ -339,6 +385,8 @@ module.exports = {
   restoreSuperKey,
   lockExamWindow,
   unlockExamWindow,
+  enterGuiMode,
+  exitGuiMode,
   setupWindowGuards,
   registerKioskIPC
 };
