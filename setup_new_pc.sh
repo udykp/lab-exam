@@ -15,6 +15,16 @@ echo "================================================="
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Optional: pass --autologin to also arm GDM autologin into the kiosk session.
+# Without it the kiosk session is installed and set as the default, but you
+# still log in through the GDM greeter (recommended until you verify it works).
+KIOSK_AUTOLOGIN=0
+for arg in "$@"; do
+  case "$arg" in
+    --autologin) KIOSK_AUTOLOGIN=1 ;;
+  esac
+done
+
 # 1. Update system package repository & install NVM + Node.js 22
 echo "-------------------------------------------------"
 echo "Step 1: Installing curl, NVM, and Node.js v22..."
@@ -70,8 +80,36 @@ echo "-------------------------------------------------"
 chmod +x "$APP_DIR/install_app.sh"
 "$APP_DIR/install_app.sh"
 
+# 5. Install the locked kiosk exam session (cage/Wayland + X11 fallback)
+echo "-------------------------------------------------"
+echo "Step 5: Installing locked kiosk exam session..."
+echo "-------------------------------------------------"
+if [ -f "$APP_DIR/kiosk/install-kiosk.sh" ]; then
+  chmod +x "$APP_DIR/kiosk/install-kiosk.sh"
+  KIOSK_ARGS=""
+  [ "$KIOSK_AUTOLOGIN" -eq 1 ] && KIOSK_ARGS="--autologin"
+  if sudo bash "$APP_DIR/kiosk/install-kiosk.sh" $KIOSK_ARGS; then
+    echo "Kiosk session installed."
+  else
+    echo "⚠  Kiosk session install hit an error (see above). Retry later with:"
+    echo "   sudo bash \"$APP_DIR/kiosk/install-kiosk.sh\""
+  fi
+else
+  echo "⚠  kiosk/install-kiosk.sh not found — skipping kiosk session setup."
+fi
+
 echo "================================================="
 echo "=== Setup Completed Successfully! ==="
 echo "=== Search for 'SecureLab' in your applications! ==="
 echo "=== Or type 'securelab' in the terminal! ==="
+echo "-------------------------------------------------"
+echo "Locked exam session installed: 'SecureLab Exam (Kiosk)'."
+echo "Log out / reboot, then at the GDM login screen it is the"
+echo "default session for this user (pick others via the gear icon)."
+if [ "$KIOSK_AUTOLOGIN" -eq 1 ]; then
+  echo "Autologin is ARMED. Apply with:  sudo systemctl restart gdm"
+else
+  echo "To boot straight into the exam (autologin), once verified run:"
+  echo "   sudo /opt/securelab-kiosk/kiosk-exam-mode.sh && sudo systemctl restart gdm"
+fi
 echo "================================================="

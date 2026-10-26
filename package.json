@@ -34,7 +34,8 @@
       "depends": [
         "xvfb",
         "x11vnc",
-        "openbox"
+        "openbox",
+        "cage"
       ]
     },
     "files": [

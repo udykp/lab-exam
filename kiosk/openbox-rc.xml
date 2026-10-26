@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SecureLab kiosk Openbox config (X11 fallback session).
+  Intentionally LOCKED DOWN:
+    * exactly one desktop  -> no workspace switching
+    * empty <keyboard>     -> no Alt+Tab, Alt+F4, run dialog, etc.
+    * empty <mouse>        -> no root menu, no title-bar/drag/resize actions,
+                              no scroll-to-switch-desktop
+    * every app forced fullscreen + undecorated
+  Clicks and keystrokes still reach the client (the exam app) normally; only
+  window-manager-level shortcuts are removed.
+-->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+  </focus>
+  <placement>
+    <policy>Smart</policy>
+  </placement>
+  <theme>
+    <name>Clearlooks</name>
+    <keepBorder>no</keepBorder>
+    <animateIconify>no</animateIconify>
+  </theme>
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+    <popupTime>0</popupTime>
+  </desktops>
+  <resize>
+    <drawContents>yes</drawContents>
+  </resize>
+
+  <!-- No window-manager keyboard shortcuts at all. -->
+  <keyboard>
+  </keyboard>
+
+  <!-- No window-manager mouse bindings at all (no root menu, no drag/move). -->
+  <mouse>
+    <dragThreshold>8</dragThreshold>
+    <doubleClickTime>200</doubleClickTime>
+    <screenEdgeWarpTime>0</screenEdgeWarpTime>
+  </mouse>
+
+  <applications>
+    <application class="*">
+      <decor>no</decor>
+      <maximized>yes</maximized>
+      <fullscreen>yes</fullscreen>
+      <focus>yes</focus>
+    </application>
+  </applications>
+</openbox_config>

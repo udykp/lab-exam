@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=SecureLab Exam (Kiosk)
+Comment=Locked single-application exam environment (Wayland / cage)
+Exec=/opt/securelab-kiosk/launch-cage.sh
+Type=Application
+DesktopNames=SecureLab
