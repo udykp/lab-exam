@@ -21,6 +21,8 @@ fi
 APP_DIR="${SECURELAB_APP_DIR:-$HOME/Desktop/Lab Exam}"
 
 export ELECTRON_OZONE_PLATFORM_HINT=x11
+# Tell the app it is in the locked kiosk session so it owns its own fullscreen.
+export SECURELAB_KIOSK=1
 LOG="$HOME/securelab-kiosk.log"
 echo "=== $(date) : starting SecureLab X11 kiosk ===" >>"$LOG" 2>&1
 

@@ -43,11 +43,13 @@
     <screenEdgeWarpTime>0</screenEdgeWarpTime>
   </mouse>
 
+  <!-- Only strip decorations and give focus. We deliberately do NOT force
+       maximize/fullscreen here: Electron owns its own fullscreen in the kiosk
+       session (SECURELAB_KIOSK=1), so letting the WM resize it too causes a
+       size mismatch where mouse clicks land on the wrong coordinates. -->
   <applications>
     <application class="*">
       <decor>no</decor>
-      <maximized>yes</maximized>
-      <fullscreen>yes</fullscreen>
       <focus>yes</focus>
     </application>
   </applications>

@@ -18,11 +18,18 @@ const fileUtils = require('./src/file-utils');
 let mainWindow = null;
 
 function createWindow() {
+  // In the locked kiosk session (set by kiosk/launch-*.sh) the app must own
+  // its fullscreen so the real window size matches Electron's view — otherwise
+  // a minimal WM force-resizes the frameless window and mouse clicks land on
+  // the wrong coordinates.
+  const isKioskSession = process.env.SECURELAB_KIOSK === '1';
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     title: 'Secure MLExam Platform',
     frame: false,
+    fullscreen: isKioskSession,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

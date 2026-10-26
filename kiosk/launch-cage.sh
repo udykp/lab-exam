@@ -25,6 +25,8 @@ LOG="$HOME/securelab-kiosk.log"
 export ELECTRON_OZONE_PLATFORM_HINT=wayland
 # Common cures for blank/black screens on lab GPUs under wlroots/cage.
 export WLR_NO_HARDWARE_CURSORS=1
+# Tell the app it is in the locked kiosk session so it owns its own fullscreen.
+export SECURELAB_KIOSK=1
 
 {
   echo "=== $(date) : starting SecureLab cage kiosk ==="
