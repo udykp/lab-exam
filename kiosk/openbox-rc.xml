@@ -43,12 +43,20 @@
     <screenEdgeWarpTime>0</screenEdgeWarpTime>
   </mouse>
 
-  <!-- Only strip decorations and give focus. We deliberately do NOT force
-       maximize/fullscreen here: Electron owns its own fullscreen in the kiosk
-       session (SECURELAB_KIOSK=1), so letting the WM resize it too causes a
-       size mismatch where mouse clicks land on the wrong coordinates. -->
+  <!-- Only the EXAM app is stripped of decorations (it is frameless + locked;
+       matched by the stable WM_CLASS "SecureLabExam" set via --class, with a
+       title fallback). Student GUI program windows are NOT listed here, so they
+       keep a normal title bar + close button and get smart placement — they can
+       be moved and closed like any program.
+       We deliberately do NOT force maximize/fullscreen on the exam app here:
+       Electron owns its own fullscreen in the kiosk session (SECURELAB_KIOSK=1),
+       and letting the WM resize it too makes mouse clicks land on wrong spots. -->
   <applications>
-    <application class="*">
+    <application class="SecureLabExam">
+      <decor>no</decor>
+      <focus>yes</focus>
+    </application>
+    <application title="Secure MLExam Platform">
       <decor>no</decor>
       <focus>yes</focus>
     </application>

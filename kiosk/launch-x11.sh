@@ -27,7 +27,11 @@ LOG="$HOME/securelab-kiosk.log"
 echo "=== $(date) : starting SecureLab X11 kiosk ===" >>"$LOG" 2>&1
 
 # Minimal window manager for reliable fullscreen; all shortcuts removed.
-openbox --config-file /opt/securelab-kiosk/openbox-rc.xml >>"$LOG" 2>&1 &
+# Prefer the repo copy so `git pull` alone updates the WM config; fall back to
+# the copy install-kiosk.sh placed in /opt.
+OB_CFG="$APP_DIR/kiosk/openbox-rc.xml"
+[ -r "$OB_CFG" ] || OB_CFG="/opt/securelab-kiosk/openbox-rc.xml"
+openbox --config-file "$OB_CFG" >>"$LOG" 2>&1 &
 OB_PID=$!
 
 # A compositor is only needed if the window comes up black. Electron now owns

@@ -7,6 +7,10 @@ app.disableHardwareAcceleration();
 // Rendering and GPU stability switches for Linux Mesa / Intel UHD Graphics
 app.commandLine.appendSwitch('disable-gpu-vsync');
 app.commandLine.appendSwitch('disable-features', 'UseChromeOSDirectVideoDecoder');
+// Stable WM_CLASS so the kiosk window manager can target the exam window only
+// (openbox strips decorations from it, while student GUI program windows keep
+// their normal title bar + close button).
+app.commandLine.appendSwitch('class', 'SecureLabExam');
 //app.commandLine.appendSwitch('enable-font-antialiasing');
 
 const kiosk = require('./src/kiosk');
