@@ -30,13 +30,20 @@ echo "=== $(date) : starting SecureLab X11 kiosk ===" >>"$LOG" 2>&1
 openbox --config-file /opt/securelab-kiosk/openbox-rc.xml >>"$LOG" 2>&1 &
 OB_PID=$!
 
-# Compositor so the FRAMELESS Electron window actually paints (without a
-# compositor a frame:false window renders black). xrender backend needs no GPU.
-picom --backend xrender >>"$LOG" 2>&1 &
-PICOM_PID=$!
+# A compositor is only needed if the window comes up black. Electron now owns
+# its own fullscreen (SECURELAB_KIOSK=1), which paints on bare X without
+# compositing — and picom's overlay can swallow mouse clicks, so it is OFF by
+# default. If a specific machine still shows a black screen, set
+#   SECURELAB_USE_PICOM=1
+# in /opt/securelab-kiosk/kiosk.env and it will start here.
+PICOM_PID=""
+if [ "${SECURELAB_USE_PICOM:-0}" = "1" ]; then
+  picom --backend xrender >>"$LOG" 2>&1 &
+  PICOM_PID=$!
+fi
 
 # Tear down the compositor + WM and end the session when the exam app exits.
-cleanup() { kill "$PICOM_PID" "$OB_PID" 2>/dev/null || true; }
+cleanup() { kill $PICOM_PID "$OB_PID" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
 # Run in the foreground (not exec) so the trap fires on exit.
