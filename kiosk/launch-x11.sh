@@ -28,8 +28,13 @@ echo "=== $(date) : starting SecureLab X11 kiosk ===" >>"$LOG" 2>&1
 openbox --config-file /opt/securelab-kiosk/openbox-rc.xml >>"$LOG" 2>&1 &
 OB_PID=$!
 
-# Tear down the WM and end the session when the exam app exits.
-cleanup() { kill "$OB_PID" 2>/dev/null || true; }
+# Compositor so the FRAMELESS Electron window actually paints (without a
+# compositor a frame:false window renders black). xrender backend needs no GPU.
+picom --backend xrender >>"$LOG" 2>&1 &
+PICOM_PID=$!
+
+# Tear down the compositor + WM and end the session when the exam app exits.
+cleanup() { kill "$PICOM_PID" "$OB_PID" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
 # Run in the foreground (not exec) so the trap fires on exit.

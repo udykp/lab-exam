@@ -50,6 +50,9 @@ APT_PKGS=(
   x11vnc
   openbox
   cage
+  xserver-xorg
+  xinit
+  picom
 )
 
 if command -v sudo &>/dev/null; then
@@ -150,6 +153,8 @@ check_cmd "X Virtual Framebuffer (Xvfb)" "which Xvfb"
 check_cmd "X11 VNC Bridge (x11vnc)" "which x11vnc"
 check_cmd "Lightweight Window Manager (openbox)" "which openbox"
 check_cmd "Kiosk Compositor (cage)" "which cage"
+check_cmd "X Server (Xorg)" "which Xorg"
+check_cmd "Compositor (picom)" "which picom"
 
 echo -e "\n${GREEN}===============================================${NC}"
 echo -e "${GREEN}=== Setup Completed Successfully! ============${NC}"

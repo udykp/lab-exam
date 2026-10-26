@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=SecureLab Exam (Kiosk X11 fallback)
-Comment=Locked single-application exam environment (X11 / openbox)
+Name=SecureLab Exam (Kiosk)
+Comment=Locked single-application exam environment (X11 / openbox + picom)
 Exec=/opt/securelab-kiosk/launch-x11.sh
 Type=Application
 DesktopNames=SecureLab

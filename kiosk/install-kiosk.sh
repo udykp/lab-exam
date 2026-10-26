@@ -58,10 +58,13 @@ echo "  Autologin  : $([ "$AUTOLOGIN" -eq 1 ] && echo yes || echo no)"
 echo "-----------------------------------------------"
 
 # 1. Dependencies -------------------------------------------------------------
-echo "[1/6] Installing cage (Wayland kiosk) + openbox (X11 fallback)..."
+echo "[1/6] Installing kiosk packages (Xorg + picom + openbox, and cage)..."
 apt-get update -y || true
-if ! apt-get install -y cage openbox; then
-  echo "  WARNING: package install failed. Install manually: sudo apt-get install cage openbox"
+# openbox+picom on Xorg is the PRIMARY path (reliable with Electron's frameless
+# window); cage/Wayland is kept as a secondary option.
+if ! apt-get install -y xserver-xorg xinit picom openbox cage; then
+  echo "  WARNING: package install failed. Install manually:"
+  echo "    sudo apt-get install xserver-xorg xinit picom openbox cage"
 fi
 
 # 2. Stage launch scripts + helpers ------------------------------------------
@@ -88,8 +91,8 @@ install -d -m 0755 /usr/share/wayland-sessions /usr/share/xsessions
 install -m 0644 "$SCRIPT_DIR/securelab-kiosk-cage.desktop" /usr/share/wayland-sessions/securelab-kiosk-cage.desktop
 install -m 0644 "$SCRIPT_DIR/securelab-kiosk-x11.desktop"  /usr/share/xsessions/securelab-kiosk-x11.desktop
 
-# 5. Make the cage session this user's default -------------------------------
-echo "[5/6] Setting '$KIOSK_USER' default session to the cage kiosk..."
+# 5. Make the X11 (openbox+picom) session this user's default ----------------
+echo "[5/6] Setting '$KIOSK_USER' default session to the X11 kiosk..."
 ASVC="/var/lib/AccountsService/users/$KIOSK_USER"
 install -d -m 0755 /var/lib/AccountsService/users
 if [ -f "$ASVC" ]; then
@@ -100,7 +103,7 @@ else
   printf '[User]\nSystemAccount=false\n' > "$ASVC"
 fi
 awk '
-  /^\[User\]/ { print; print "Session=securelab-kiosk-cage"; print "XSession=securelab-kiosk-x11"; next }
+  /^\[User\]/ { print; print "Session=securelab-kiosk-x11"; print "XSession=securelab-kiosk-x11"; next }
   { print }
 ' "$ASVC" > "$ASVC.tmp" && mv "$ASVC.tmp" "$ASVC"
 chmod 0600 "$ASVC"
@@ -117,10 +120,10 @@ fi
 echo "-----------------------------------------------"
 echo "Done. Apply with:  sudo systemctl restart gdm   (or reboot)"
 echo
-echo "At the login screen, '$KIOSK_USER' now defaults to 'SecureLab Exam (Kiosk)'."
+echo "At the login screen, '$KIOSK_USER' now defaults to the locked exam session."
 echo "Use the gear icon to pick another session:"
-echo "  * 'Ubuntu'                              -> normal admin desktop"
-echo "  * 'SecureLab Exam (Kiosk X11 fallback)' -> X11 fallback if cage misbehaves"
+echo "  * 'Ubuntu'                                  -> normal admin desktop"
+echo "  * 'SecureLab Exam (Kiosk - Wayland)'        -> experimental cage/Wayland"
 echo
 echo "Maintenance escape hatch:  sudo /opt/securelab-kiosk/kiosk-admin-mode.sh"
 echo "==============================================="
