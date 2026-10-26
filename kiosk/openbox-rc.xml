@@ -44,14 +44,26 @@
   </mouse>
 
   <!-- Only the EXAM app is stripped of decorations (it is frameless + locked;
-       matched by the stable WM_CLASS "SecureLabExam" set via --class, with a
-       title fallback). Student GUI program windows are NOT listed here, so they
-       keep a normal title bar + close button and get smart placement — they can
-       be moved and closed like any program.
+       matched by the stable WM_CLASS "SecureLabExam" set by the Chromium class
+       switch, with a title fallback). Student GUI windows are centered and keep
+       a normal title bar + close button, so they can be moved and closed.
        We deliberately do NOT force maximize/fullscreen on the exam app here:
        Electron owns its own fullscreen in the kiosk session (SECURELAB_KIOSK=1),
        and letting the WM resize it too makes mouse clicks land on wrong spots. -->
   <applications>
+    <!-- Center every normal window regardless of the position it requests.
+         Java/Tk default their windows to the top-left corner (0,0); this moves
+         student GUI program windows to the middle of the screen instead. The
+         exam app is always fullscreen or maximized, so a forced position is
+         ignored for it. -->
+    <application class="*">
+      <position force="yes">
+        <x>center</x>
+        <y>center</y>
+      </position>
+    </application>
+    <!-- Strip decorations from the exam app only (student windows keep their
+         title bar + close button). -->
     <application class="SecureLabExam">
       <decor>no</decor>
       <focus>yes</focus>
