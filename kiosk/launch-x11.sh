@@ -27,11 +27,11 @@ LOG="$HOME/securelab-kiosk.log"
 echo "=== $(date) : starting SecureLab X11 kiosk ===" >>"$LOG" 2>&1
 
 # Minimal window manager for reliable fullscreen; all shortcuts removed.
-# Prefer the repo copy so `git pull` alone updates the WM config; fall back to
-# the copy install-kiosk.sh placed in /opt.
-OB_CFG="$APP_DIR/kiosk/openbox-rc.xml"
-[ -r "$OB_CFG" ] || OB_CFG="/opt/securelab-kiosk/openbox-rc.xml"
-openbox --config-file "$OB_CFG" >>"$LOG" 2>&1 &
+# Use the copy install-kiosk.sh placed in /opt. openbox is started BEFORE
+# run.sh's git auto-update runs, so reading a repo copy here could load a
+# pre-update or half-written config. The /opt copy is written explicitly by the
+# installer; update the WM config by re-running install-kiosk.sh.
+openbox --config-file /opt/securelab-kiosk/openbox-rc.xml >>"$LOG" 2>&1 &
 OB_PID=$!
 
 # A compositor is only needed if the window comes up black. Electron now owns
