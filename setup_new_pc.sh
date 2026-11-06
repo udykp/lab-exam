@@ -104,8 +104,10 @@ echo "=== Search for 'SecureLab' in your applications! ==="
 echo "=== Or type 'securelab' in the terminal! ==="
 echo "-------------------------------------------------"
 echo "Locked exam session installed: 'SecureLab Exam (Kiosk)'."
-echo "Log out / reboot, then at the GDM login screen it is the"
-echo "default session for this user (pick others via the gear icon)."
+echo "This user DEFAULTS to the normal Ubuntu desktop, so the laptop stays"
+echo "usable day-to-day. To run an exam, log out / reboot and pick"
+echo "'SecureLab Exam (Kiosk)' from the GDM gear icon. When the exam app"
+echo "exits, the default is reset back to Ubuntu automatically."
 if [ "$KIOSK_AUTOLOGIN" -eq 1 ]; then
   echo "Autologin is ARMED. Apply with:  sudo systemctl restart gdm"
 else

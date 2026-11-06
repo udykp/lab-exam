@@ -26,6 +26,25 @@ export SECURELAB_KIOSK=1
 LOG="$HOME/securelab-kiosk.log"
 echo "=== $(date) : starting SecureLab X11 kiosk ===" >>"$LOG" 2>&1
 
+# GDM remembers the last session you logged into and makes it your default, so
+# once an invigilator picks "SecureLab Exam (Kiosk)" from the login gear the
+# machine keeps defaulting to the kiosk on every later login -- even after the
+# exam. To hand the laptop back to normal use, we reset the stored default to
+# the ordinary Ubuntu desktop as soon as the exam app exits. AccountsService
+# lets a user set their OWN default session with no root, so this runs as the
+# exam user with no sudo. Override the target on odd machines by setting
+# SECURELAB_NORMAL_SESSION (e.g. "ubuntu-xorg") in kiosk.env.
+NORMAL_SESSION="${SECURELAB_NORMAL_SESSION:-ubuntu}"
+reset_default_session() {
+  uid=$(id -u)
+  gdbus call --system \
+    --dest org.freedesktop.Accounts \
+    --object-path "/org/freedesktop/Accounts/User$uid" \
+    --method org.freedesktop.Accounts.User.SetSession "$NORMAL_SESSION" >>"$LOG" 2>&1 \
+    && echo "reset default session -> $NORMAL_SESSION" >>"$LOG" 2>&1 \
+    || echo "WARNING: could not reset default session to $NORMAL_SESSION" >>"$LOG" 2>&1
+}
+
 # Minimal window manager for reliable fullscreen; all shortcuts removed.
 # Use the copy install-kiosk.sh placed in /opt. openbox is started BEFORE
 # run.sh's git auto-update runs, so reading a repo copy here could load a
@@ -51,4 +70,9 @@ cleanup() { kill $PICOM_PID "$OB_PID" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
 # Run in the foreground (not exec) so the trap fires on exit.
-/bin/bash "$APP_DIR/run.sh" >>"$LOG" 2>&1
+/bin/bash "$APP_DIR/run.sh" >>"$LOG" 2>&1 || true
+
+# Exam app has exited: hand the machine back to the normal Ubuntu desktop so the
+# next login does not land in the kiosk again. Done here (session still fully
+# active) rather than in the EXIT trap, where polkit may already reject it.
+reset_default_session
