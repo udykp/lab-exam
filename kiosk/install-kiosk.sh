@@ -89,8 +89,13 @@ install -m 0644 "$SCRIPT_DIR/securelab-kiosk-x11.desktop"  /usr/share/xsessions/
 # Clean up the cage/Wayland session from machines set up by earlier versions.
 rm -f /usr/share/wayland-sessions/securelab-kiosk-cage.desktop /opt/securelab-kiosk/launch-cage.sh
 
-# 5. Make the X11 (openbox+picom) session this user's default ----------------
-echo "[5/6] Setting '$KIOSK_USER' default session to the X11 kiosk..."
+# 5. Keep the normal Ubuntu desktop as this user's default session ------------
+# The kiosk session is NOT made the default: on a shared machine the laptop
+# should behave normally day-to-day and only enter the locked exam environment
+# on demand (via exam-mode autologin below, or by picking "SecureLab Exam
+# (Kiosk)" from the login gear icon). We pin the default to Ubuntu so students
+# and other users get the ordinary desktop without touching the gear icon.
+echo "[5/6] Setting '$KIOSK_USER' default session to the normal Ubuntu desktop..."
 ASVC="/var/lib/AccountsService/users/$KIOSK_USER"
 install -d -m 0755 /var/lib/AccountsService/users
 if [ -f "$ASVC" ]; then
@@ -101,7 +106,7 @@ else
   printf '[User]\nSystemAccount=false\n' > "$ASVC"
 fi
 awk '
-  /^\[User\]/ { print; print "Session=securelab-kiosk-x11"; print "XSession=securelab-kiosk-x11"; next }
+  /^\[User\]/ { print; print "Session=ubuntu"; print "XSession=ubuntu"; next }
   { print }
 ' "$ASVC" > "$ASVC.tmp" && mv "$ASVC.tmp" "$ASVC"
 chmod 0600 "$ASVC"
@@ -118,8 +123,9 @@ fi
 echo "-----------------------------------------------"
 echo "Done. Apply with:  sudo systemctl restart gdm   (or reboot)"
 echo
-echo "At the login screen, '$KIOSK_USER' now defaults to 'SecureLab Exam (Kiosk)'."
-echo "Use the gear icon to pick 'Ubuntu' for the normal admin desktop."
+echo "At the login screen, '$KIOSK_USER' now defaults to the normal 'Ubuntu' desktop."
+echo "To run an exam, arm the kiosk:  sudo /opt/securelab-kiosk/kiosk-exam-mode.sh"
+echo "(or pick 'SecureLab Exam (Kiosk)' once from the login gear icon)."
 echo
-echo "Maintenance escape hatch:  sudo /opt/securelab-kiosk/kiosk-admin-mode.sh"
+echo "Back to normal afterwards:  sudo /opt/securelab-kiosk/kiosk-admin-mode.sh"
 echo "==============================================="
